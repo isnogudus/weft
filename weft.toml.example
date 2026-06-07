@@ -31,6 +31,12 @@ admin_uid = "admin"
 # admin_dn: the bind DN. Leave unset to derive uid=<admin_uid>,ou=people,<base>.
 # Set it when your rootdn has a different shape, e.g.:
 # admin_dn = "cn=admin,dc=example,dc=org"
+#
+# allow_admin: set false for a self-service-only deployment -- the admin uid is
+# rejected at login, so no admin/management UI is reachable. (The rootdn still
+# works out-of-band and for the one-time setup wizard.) The active mode is
+# printed at startup ("admin login: ENABLED/DISABLED").
+# allow_admin = true
 
 # --- Directory layout (defaults shown) ---
 # people_ou      = "people"
@@ -83,5 +89,7 @@ admin_uid = "admin"
 listen_addr = "127.0.0.1:8080"   # put relayd/httpd in front for TLS
 # tls_cert_file = "/etc/ssl/weft.crt"   # optional standalone TLS instead of a proxy
 # tls_key_file  = "/etc/ssl/private/weft.key"
-# session_timeout = "30m"
+# session_timeout = "30m"     # idle timeout: the server expires a session after
+#                             # this long without a request (sliding), and the
+#                             # SPA switches to the login view when it expires.
 cookie_secure = true             # set false ONLY for local plain-http dev

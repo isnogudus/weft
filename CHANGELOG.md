@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `allow_admin` option (default true). Set false for a self-service-only
+  deployment: the admin uid is rejected at login, so no admin/management UI is
+  reachable. The active mode is logged at startup ("admin login: ENABLED/DISABLED").
+- Idle auto-logout: the server already expires sessions after `session_timeout`
+  of inactivity; the SPA now switches to the login view when the session expires
+  (an idle timer plus a 401 fallback).
 - Support for connecting to ldapd over a local Unix socket via an `ldapi://`
   `ldap_url` (e.g. `ldapi:///var/run/ldapi`). For ldapi the connection is local
   and secured by filesystem permissions, so `tls_mode`, `ca_cert_file`,

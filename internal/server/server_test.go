@@ -152,6 +152,40 @@ func TestLoginRateLimit(t *testing.T) {
 	}
 }
 
+func TestAdminLoginDisabled(t *testing.T) {
+	cfg := config.Default()
+	cfg.BaseDN = "dc=example,dc=org"
+	cfg.CookieSecure = false
+	cfg.AllowAdmin = false
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10999}, idalloc.Range{Min: 20000, Max: 20999})
+	srv := New(cfg, f, nil)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(func() { ts.Close(); srv.Close() })
+
+	c := newClient(t, ts.URL)
+	// Bootstrap still works (it uses the rootpw directly, not the login path).
+	if resp, _ := c.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"}); resp.StatusCode != 200 {
+		t.Fatalf("bootstrap: %d", resp.StatusCode)
+	}
+	// The admin uid is rejected at login.
+	if code := c.login("admin", "rootpw"); code != http.StatusForbidden {
+		t.Fatalf("admin login with allow_admin=false: want 403, got %d", code)
+	}
+}
+
+func TestMetaExposesSessionTimeout(t *testing.T) {
+	ts := testServer(t)
+	admin := newClient(t, ts.URL)
+	admin.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"})
+	admin.login("admin", "rootpw")
+	_, b := admin.do(http.MethodGet, "/api/meta", nil)
+	var m metaDTO
+	_ = json.Unmarshal(b, &m)
+	if m.SessionTimeoutSeconds <= 0 {
+		t.Fatalf("meta sessionTimeoutSeconds = %d, want > 0", m.SessionTimeoutSeconds)
+	}
+}
+
 func TestRequiresAuth(t *testing.T) {
 	ts := testServer(t)
 	c := newClient(t, ts.URL)

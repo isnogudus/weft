@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { api, setCsrf } from './lib/api.js'
+  import { api, setCsrf, configureSession } from './lib/api.js'
   import { app } from './lib/store.svelte.js'
   import { t } from './lib/i18n.svelte.js'
   import Login from './components/Login.svelte'
@@ -32,6 +32,11 @@
       setCsrf(me.csrf)
       app.me = me
       app.meta = await api.get('/meta')
+      // Auto-logout: on session expiry (idle timeout or a 401), switch to login.
+      configureSession(app.meta.sessionTimeoutSeconds, () => {
+        setCsrf('')
+        app.me = null
+      })
     } catch (e) {
       app.me = null // not logged in
     }

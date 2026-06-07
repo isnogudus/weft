@@ -1,5 +1,5 @@
 <script>
-  import { api, setCsrf } from '../lib/api.js'
+  import { api, setCsrf, endSession } from '../lib/api.js'
   import { app } from '../lib/store.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   import Users from './Users.svelte'
@@ -12,6 +12,7 @@
 
   async function logout() {
     try { await api.post('/logout') } catch {}
+    endSession()
     setCsrf('')
     app.me = null
   }

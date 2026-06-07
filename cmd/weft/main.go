@@ -321,8 +321,13 @@ func logStartup(cfg config.Config) {
 	} else {
 		log.Printf("LDAP server: %s (tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.TLSMode, cfg.BaseDN)
 	}
-	log.Printf("admin login: type uid %q; it binds as %q (must equal ldapd rootdn)",
-		cfg.AdminUID, cfg.AdminBindDN())
+	if cfg.AllowAdmin {
+		log.Printf("admin login: ENABLED -- uid %q binds as %q (must equal ldapd rootdn)",
+			cfg.AdminUID, cfg.AdminBindDN())
+	} else {
+		log.Printf("admin login: DISABLED (allow_admin=false) -- self-service only; rootdn %q still used for setup/out-of-band",
+			cfg.AdminBindDN())
+	}
 	if !cfg.IsLDAPI() {
 		if cfg.InsecureSkipVerify {
 			log.Print("WARNING: insecure_skip_verify is enabled -- TLS certificates are not validated")

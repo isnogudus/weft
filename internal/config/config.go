@@ -46,6 +46,12 @@ type Config struct {
 	AdminUID string `toml:"admin_uid"`
 	AdminDN  string `toml:"admin_dn"`
 
+	// AllowAdmin controls whether the admin may log in to the web UI. Set false
+	// for a self-service-only deployment: the admin uid is rejected at login, so
+	// no admin session (and no management UI) is ever reachable. The rootdn can
+	// still be used out-of-band (ldapd) and for the one-time setup wizard.
+	AllowAdmin bool `toml:"allow_admin"`
+
 	// Directory layout (good defaults; rarely changed).
 	PeopleOU     string `toml:"people_ou"`
 	GroupsOU     string `toml:"groups_ou"`
@@ -115,6 +121,7 @@ func Default() Config {
 	return Config{
 		TLSMode:           TLSLDAPS,
 		AdminUID:          "admin",
+		AllowAdmin:        true,
 		PeopleOU:          "people",
 		GroupsOU:          "groups",
 		PrimaryGroup:      "users",

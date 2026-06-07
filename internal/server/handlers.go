@@ -42,6 +42,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isAdmin := s.cfg.IsAdminUID(req.Username)
+	if isAdmin && !s.cfg.AllowAdmin {
+		writeError(w, http.StatusForbidden, "Admin-Anmeldung ist deaktiviert")
+		return
+	}
 	var (
 		c   directory.Conn
 		err error
@@ -128,6 +132,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		PrimaryGroup: c.PrimaryGroup, DefaultShell: c.DefaultShell, HomeTemplate: c.HomeTemplate,
 		UIDMin: c.UIDMin, UIDMax: c.UIDMax, GIDMin: c.GIDMin, GIDMax: c.GIDMax,
 		MaxPwdLength: c.MaxPasswordLength, MailAttr: c.MailAttr, MailAliasAttr: c.MailAliasAttr,
+		SessionTimeoutSeconds: int(c.SessionTimeout.D().Seconds()),
 	})
 }
 

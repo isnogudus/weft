@@ -185,7 +185,11 @@ In `-dev` mode the admin is `admin` / `rootpw` (override with `-dev-rootpw`).
   logged.
 - CSRF: a synchronizer token (returned by `/login` and `/me`, echoed in the
   `X-CSRF-Token` header) is required on all state-changing requests.
-- Login is rate-limited per client IP.
+- Login is rate-limited per client IP. Sessions expire after `session_timeout`
+  of inactivity (server-side, sliding); the SPA switches to the login view when a
+  session expires.
+- `allow_admin = false` runs a self-service-only instance: the admin uid cannot
+  log in at all (no management UI). The active mode is logged at startup.
 - Passwords are hashed client-side (bcrypt) before `userPassword` is written;
   inputs longer than 72 bytes are rejected (bcrypt truncation).
 - Certificate verification can be skipped for a self-signed LDAP server via

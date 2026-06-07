@@ -176,4 +176,6 @@ type metaDTO struct {
 	MaxPwdLength  int    `json:"maxPasswordLength"`
 	MailAttr      string `json:"mailAttr"`
 	MailAliasAttr string `json:"mailAliasAttr"`
+	// SessionTimeoutSeconds drives the SPA's inactivity auto-logout.
+	SessionTimeoutSeconds int `json:"sessionTimeoutSeconds"`
 }
