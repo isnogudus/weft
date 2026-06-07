@@ -54,25 +54,15 @@ admin_uid = "admin"
 # max_password_length = 72       # bcrypt truncates beyond 72 bytes
 
 # --- Sandbox ---
-# After reading all files, when STARTED AS ROOT weft chroot(2)s and drops
-# privileges to `user`/`group` (Linux, macOS, FreeBSD, the BSDs). On OpenBSD it
-# additionally applies pledge(2)/unveil(2). The chroot/privdrop is skipped
-# automatically when not started as root; on non-Unix platforms it is a no-op.
-# sandbox = true             # master switch for all OS sandboxing
+# Every non-dev run uses privilege separation (a monitor/worker process split;
+# see README). When STARTED AS ROOT the worker chroot(2)s and drops privileges to
+# `user`/`group`; on OpenBSD it also applies pledge(2)/unveil(2). The
+# chroot/privdrop is skipped automatically when not started as root. Set
+# sandbox=false to keep the process split but turn off chroot/pledge/unveil.
+# sandbox = true             # master switch for chroot/privdrop/pledge/unveil
 # chroot  = "/var/empty"     # chroot dir when root; "" disables chroot (keeps privdrop)
 # user    = "_weft"          # drop to this user when root; "" keeps the current uid
 # group   = ""               # "" = the user's primary group
-#
-# privsep = true             # (default) privilege separation (Unix): the process
-#                            # model for every non-dev run. A small privileged
-#                            # monitor opens LDAP connections (DNS + connect, TCP
-#                            # or ldapi) and passes the descriptors to the worker,
-#                            # so the worker keeps its /var/empty chroot even with
-#                            # a hostname or an ldapi socket. Started as root the
-#                            # worker also chroots and drops privileges; without
-#                            # root those steps are skipped but the same two-
-#                            # process model (and pledge/unveil) still apply.
-#                            # Set false to run as a single process instead.
 #
 # NOTE: a chroot to /var/empty removes access to DNS and to Unix sockets. For a
 # chrooted setup, use ldaps://<IP-address> (not a hostname) with a ca_cert_file.

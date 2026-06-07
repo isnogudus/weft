@@ -75,19 +75,19 @@ func run() error {
 	switch {
 	case privsep.IsWorker():
 		return runWorker(cfg, assets)
-	case !*dev && cfg.Privsep && privsep.Supported:
-		// privsep (monitor/worker) is the model for every non-dev run. As root
-		// the worker also chroots and drops privileges; without root those steps
-		// are skipped but the process split and pledge/unveil still apply.
+	case !*dev && privsep.Supported:
+		// privsep (monitor/worker) is the model for every non-dev run on Unix. As
+		// root the worker also chroots and drops privileges; without root those
+		// steps are skipped but the process split and pledge/unveil still apply.
 		return runMonitor(cfg)
 	default:
-		// -dev (in-memory fake), privsep=false, or a non-Unix platform.
+		// -dev (in-memory fake), or a non-Unix platform (no OS sandbox).
 		return runSingle(cfg, *dev, *devRootpw, assets)
 	}
 }
 
-// runSingle is the classic single-process mode (also used for -dev and when
-// privsep is disabled). It applies the in-process sandbox (chroot/drop/pledge).
+// runSingle runs weft as a single process. It is used only for -dev (the
+// in-memory fake) and on non-Unix platforms; real Unix deployments use privsep.
 func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) error {
 	_, closeLog := setupLogging(cfg, "single")
 	defer closeLog()
@@ -117,37 +117,9 @@ func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) erro
 		return err
 	}
 
-	if !dev {
-		warmRuntime()
-		// In-process confinement. A chroot can't reach an ldapi socket, so skip
-		// it in that case (privilege drop + pledge/unveil still apply). Use
-		// privsep to keep the chroot with ldapi or a hostname.
-		sbChroot := cfg.Chroot
-		if cfg.Sandbox && os.Geteuid() == 0 && sbChroot != "" {
-			switch {
-			case cfg.IsLDAPI():
-				log.Printf("sandbox: ldapi socket %q is outside the chroot; skipping chroot (privilege drop + pledge/unveil still apply). Enable privsep to keep the chroot.",
-					cfg.LDAPISocketPath())
-				sbChroot = ""
-			case cfg.LDAPHostIsName():
-				log.Printf("WARNING: chroot %q is active and ldap_url uses a hostname -- DNS config is not inside the chroot; use an IP address, enable privsep, or set chroot=\"\"",
-					sbChroot)
-			}
-		}
-		if err := sandbox.Apply(sandbox.Config{
-			Enabled:    cfg.Sandbox,
-			Chroot:     sbChroot,
-			User:       cfg.User,
-			Group:      cfg.Group,
-			LDAPI:      cfg.IsLDAPI(),
-			SocketPath: cfg.LDAPISocketPath(),
-			CACertFile: cfg.CACertFile,
-			NeedsDNS:   cfg.LDAPHostIsName(),
-		}); err != nil {
-			return fmt.Errorf("sandbox: %w", err)
-		}
-	}
-
+	// runSingle is only reached for -dev (in-memory fake) and on non-Unix
+	// platforms, where there is no OS sandbox to apply. Real Unix deployments go
+	// through privsep (runMonitor/runWorker).
 	return serveAndWait(newHTTPServer(srv), ln, cfg.ListenAddr, nil)
 }
 

@@ -71,16 +71,12 @@ type Config struct {
 	// Sandbox (OpenBSD only; no-op elsewhere). After reading all files weft
 	// confines itself with pledge(2)/unveil(2), and — when started as root —
 	// chroot(2)s and drops privileges to User. Chroot is skipped if not root.
+	// (Confinement applies inside the privilege-separated monitor/worker, which
+	// is the model for every non-dev run on Unix.)
 	Sandbox bool   `toml:"sandbox"` // master switch (default true)
 	Chroot  string `toml:"chroot"`  // chroot dir when root (default /var/empty); empty disables chroot
 	User    string `toml:"user"`    // drop to this user when chrooting (default _weft)
 	Group   string `toml:"group"`   // drop to this group ("" = the user's primary group)
-
-	// Privsep enables privilege separation: a privileged monitor process opens
-	// LDAP connections and passes the descriptors to an unprivileged, chrooted
-	// worker. This lets the worker chroot even with a hostname or ldapi socket.
-	// Unix-only; ignored on other platforms.
-	Privsep bool `toml:"privsep"`
 
 	// Logging. "stderr" (default) lets the supervisor capture logs; "syslog"
 	// writes to the local syslog. Under privsep the monitor owns the syslog
@@ -133,7 +129,6 @@ func Default() Config {
 		BcryptCost:        12,
 		MaxPasswordLength: 72,
 		Sandbox:           true,
-		Privsep:           true,
 		Log:               "stderr",
 		SyslogTag:         "weft",
 		Chroot:            "/var/empty",

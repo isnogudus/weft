@@ -194,38 +194,29 @@ In `-dev` mode the admin is `admin` / `rootpw` (override with `-dev-rootpw`).
 
 ### Sandboxing
 
-weft confines itself **after** reading every file it needs (config, CA bundle /
-system trust store, TLS keypair) and opening its listening socket — this is the
-last step before serving, so nothing root-owned is read afterwards.
+Every non-`-dev` run on Unix uses **privilege separation** (a monitor/worker
+process split, below). Confinement happens **after** each process has read every
+file it needs (config, CA bundle / system trust store, TLS keypair) and opened
+its socket — the last step before serving, so nothing is read once the
+filesystem and syscalls are restricted:
 
-- **Cross-platform (Linux, macOS, FreeBSD, the BSDs):** when **started as root**
-  weft `chroot(2)`s to `chroot` (default `/var/empty`) and drops privileges to
-  `user`/`group` (default `_weft`). If not started as root, this step is skipped.
-- **OpenBSD additionally:** `pledge(2)` reduces the permitted syscalls to roughly
-  `stdio rpath inet` (plus `dns` for hostname resolution, `unix` for an ldapi
-  socket), and `unveil(2)` restricts (or, under chroot, removes) filesystem
-  access.
+- When **started as root**, the worker `chroot(2)`s to `chroot` (default
+  `/var/empty`) and drops privileges to `user`/`group` (default `_weft`) — on
+  Linux, macOS, FreeBSD and the BSDs. Without root those steps are skipped (the
+  process split still applies).
+- On **OpenBSD**, `pledge(2)`/`unveil(2)` additionally restrict each process to
+  the minimal syscalls and paths it needs (see below).
 
-This is why the rc.d script starts weft as root (it drops privileges itself —
-see [`contrib/weft.rc`](contrib/weft.rc)). Everything is controlled by the
-`sandbox` / `chroot` / `user` / `group` options; on non-Unix platforms it is a
-no-op.
-
-Caveat — single-process mode only (i.e. `privsep = false`): a chroot to
-`/var/empty` cannot reach DNS config or Unix sockets. For a chrooted deployment
-use `ldaps://<IP>` with a `ca_cert_file`; with an `ldapi://` url weft **skips the
-chroot automatically** while still dropping privileges and applying
-`pledge`/`unveil`. The **default privsep mode** (below) removes this caveat
-entirely — the chroot holds for hostnames and ldapi alike.
+The rc.d script starts weft as root so it can drop privileges itself (see
+[`contrib/weft.rc`](contrib/weft.rc)). Controlled by `sandbox` / `chroot` /
+`user` / `group`; `sandbox = false` keeps the process split but turns the
+chroot/privdrop/pledge/unveil off. No-op on non-Unix platforms.
 
 ### Privilege separation (privsep)
 
-privsep is **on by default** (`privsep = true`, Unix) and is the process model
-for every non-`-dev` run. Started as root, the worker additionally chroots and
-drops privileges; without root those two steps are skipped but the process split
-and `pledge`/`unveil` still apply — same model either way. Set `privsep = false`
-to fall back to a single process (or run `-dev`). It runs weft as two processes,
-in the style of OpenBSD daemons:
+privsep is the process model for **every non-`-dev` run** on Unix; weft runs as
+two processes, in the style of OpenBSD daemons. (`-dev` uses the in-memory fake
+and stays single-process.)
 
 - A small **privileged monitor** opens connections to the LDAP server — DNS +
   `connect`, for TCP *or* the ldapi Unix socket — and passes the connected file

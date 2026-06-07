@@ -20,16 +20,17 @@ All notable changes to this project are documented here. The format is based on
   non-Unix platforms. The rc.d example now starts weft as root so it can drop
   privileges itself.
 
-- Privilege separation (`privsep` option, Unix). A privileged monitor process
-  opens LDAP connections (DNS + connect, TCP or ldapi) and passes the connected
-  descriptors to a re-exec'd, chrooted, unprivileged worker over a socketpair
-  (`SCM_RIGHTS`). The worker keeps its `/var/empty` chroot even with a hostname
-  or ldapi endpoint. On OpenBSD the monitor/worker are pledged to minimal
-  promise sets (`…sendfd` / `…recvfd`). On by default (`privsep = true`); engages
-  when started as root, so non-root and `-dev` run single-process. The monitor
-  stops the worker by closing a shutdown pipe (no `kill`/`proc`); if the monitor
-  dies the worker follows rather than being orphaned. `SIGHUP`/`SIGINT`/`SIGTERM`
-  all trigger a clean shutdown.
+- Privilege separation (Unix) is the process model for every non-`-dev` run. A
+  privileged monitor process opens LDAP connections (DNS + connect, TCP or ldapi)
+  and passes the connected descriptors to a re-exec'd, unprivileged worker over a
+  socketpair (`SCM_RIGHTS`). Started as root the worker chroots to `/var/empty`
+  and drops privileges; without root those steps are skipped but the same split
+  applies. The worker keeps its chroot even with a hostname or ldapi endpoint. On
+  OpenBSD the monitor and worker are pledged to minimal promise sets (`…sendfd` /
+  `…recvfd`) and unveiled to just the paths they use. The monitor stops the worker
+  by closing a shutdown pipe (no `kill`/`proc`); if the monitor dies the worker
+  follows rather than being orphaned. `SIGHUP`/`SIGINT`/`SIGTERM` all trigger a
+  clean shutdown. `-dev` and non-Unix platforms run as a single process.
 - runit service example under `contrib/runit/` (foreground `run` + `svlogd`
   `log/run`). weft logs to stderr for the supervisor to capture.
 - Optional syslog logging (`log = "syslog"`, `syslog_tag`). Under privsep the
