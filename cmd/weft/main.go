@@ -145,7 +145,7 @@ func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) erro
 		}
 	}
 
-	return serveAndWait(newHTTPServer(srv), ln, cfg.ListenAddr)
+	return serveAndWait(newHTTPServer(srv), ln, cfg.ListenAddr, nil)
 }
 
 // runMonitor is the privileged side of privilege separation: it binds the
@@ -211,7 +211,7 @@ func runWorker(cfg config.Config, assets fs.FS) error {
 	}
 	log.Printf("privsep: worker (pid %d) serving on %s", os.Getpid(), cfg.ListenAddr)
 
-	return serveAndWait(newHTTPServer(srv), ln, cfg.ListenAddr)
+	return serveAndWait(newHTTPServer(srv), ln, cfg.ListenAddr, w.Done())
 }
 
 // --- helpers ---
@@ -267,12 +267,22 @@ func newHTTPServer(srv *server.Server) *http.Server {
 	}
 }
 
-func serveAndWait(httpSrv *http.Server, ln net.Listener, addr string) error {
+// serveAndWait serves until an OS signal, a shutdown request on stopC (nil in
+// single-process mode; the privsep monitor's shutdown channel otherwise), or a
+// server error.
+func serveAndWait(httpSrv *http.Server, ln net.Listener, addr string, stopC <-chan struct{}) error {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("weft %s listening on %s", version, addr)
 		errCh <- httpSrv.Serve(ln)
 	}()
+
+	shutdown := func() error {
+		log.Print("shutting down")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return httpSrv.Shutdown(ctx)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -281,13 +291,12 @@ func serveAndWait(httpSrv *http.Server, ln net.Listener, addr string) error {
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
+		return nil
 	case <-stop:
-		log.Print("shutting down")
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return httpSrv.Shutdown(ctx)
+		return shutdown()
+	case <-stopC:
+		return shutdown()
 	}
-	return nil
 }
 
 // logStartup prints the LDAP target, the resolved admin bind DN, and TLS

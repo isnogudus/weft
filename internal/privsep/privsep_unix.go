@@ -15,8 +15,9 @@ import (
 // Inherited descriptor numbers in the worker process. exec.Cmd.ExtraFiles maps
 // the i-th extra file to fd 3+i.
 const (
-	fdControl  = 3 // socketpair end to the monitor
+	fdControl  = 3 // socketpair end to the monitor (dial requests / fd passing)
 	fdListener = 4 // the HTTP listening socket
+	fdShutdown = 5 // read end of the shutdown pipe (monitor closes it to stop us)
 	workerEnv  = "WEFT_PRIVSEP_WORKER"
 )
 
@@ -63,36 +64,51 @@ func RunMonitor(ln *net.TCPListener, dial RawDialer, confine func() error) error
 		return fmt.Errorf("privsep: listener fd: %w", err)
 	}
 
+	// Shutdown channel: the monitor keeps the write end and closes it to ask the
+	// worker to stop. This replaces sending a signal (kill(2)), so the monitor
+	// needs no "proc" pledge promise. If the monitor dies, the pipe closes too,
+	// so the worker shuts down rather than being orphaned.
+	shutdownR, shutdownW, err := os.Pipe()
+	if err != nil {
+		workerCtrl.Close()
+		lnFile.Close()
+		return fmt.Errorf("privsep: shutdown pipe: %w", err)
+	}
+
 	cmd := exec.Command(self, os.Args[1:]...)
 	cmd.Env = append(os.Environ(), workerEnv+"=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.ExtraFiles = []*os.File{workerCtrl, lnFile} // -> fd 3, fd 4
+	cmd.ExtraFiles = []*os.File{workerCtrl, lnFile, shutdownR} // -> fd 3, 4, 5
 	if err := cmd.Start(); err != nil {
 		workerCtrl.Close()
 		lnFile.Close()
+		shutdownR.Close()
+		shutdownW.Close()
 		return fmt.Errorf("privsep: start worker: %w", err)
 	}
-	// The child inherited dups; the monitor drops its own copies.
+	// The child inherited dups; the monitor drops its own copies (but keeps the
+	// shutdown write end).
 	workerCtrl.Close()
 	lnFile.Close()
+	shutdownR.Close()
 
-	// Forward terminating signals to the worker so it can shut down gracefully.
+	// On a terminating signal, close the shutdown pipe to stop the worker.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		if s, ok := <-sigCh; ok {
-			_ = cmd.Process.Signal(s)
+		if _, ok := <-sigCh; ok {
+			shutdownW.Close()
 		}
 	}()
 
 	mc, err := unixConn(monFile)
 	if err != nil {
-		_ = cmd.Process.Kill()
+		shutdownW.Close()
 		return err
 	}
 	if confine != nil {
 		if err := confine(); err != nil {
-			_ = cmd.Process.Kill()
+			shutdownW.Close() // ask the worker to stop
 			return fmt.Errorf("privsep: confine monitor: %w", err)
 		}
 	}
@@ -148,10 +164,13 @@ type Worker struct {
 	Listener net.Listener
 	ctrl     *net.UnixConn
 	mu       sync.Mutex
+	done     chan struct{}
 }
 
 // StartWorker reconstructs the inherited descriptors. Call it once, early, in
-// the worker process (when IsWorker() is true).
+// the worker process (when IsWorker() is true). It starts a goroutine watching
+// the shutdown pipe; Done() is closed when the monitor asks the worker to stop
+// (or dies).
 func StartWorker() (*Worker, error) {
 	ctrl, err := unixConn(os.NewFile(fdControl, "privsep-control"))
 	if err != nil {
@@ -163,8 +182,22 @@ func StartWorker() (*Worker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("privsep: listener fd: %w", err)
 	}
-	return &Worker{Listener: ln, ctrl: ctrl}, nil
+
+	w := &Worker{Listener: ln, ctrl: ctrl, done: make(chan struct{})}
+	shutdownFile := os.NewFile(fdShutdown, "privsep-shutdown")
+	go func() {
+		// Blocks until the monitor writes to or closes the pipe (EOF), then
+		// signals shutdown. read(2) is permitted by the worker's "stdio" pledge.
+		var b [1]byte
+		_, _ = shutdownFile.Read(b[:])
+		shutdownFile.Close()
+		close(w.done)
+	}()
+	return w, nil
 }
+
+// Done returns a channel closed when the monitor requests shutdown (or exits).
+func (w *Worker) Done() <-chan struct{} { return w.done }
 
 // DialLDAP asks the monitor to open a connection to the LDAP endpoint and
 // returns it. It is safe for concurrent use (requests are serialised).

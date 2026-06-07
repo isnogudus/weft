@@ -29,6 +29,9 @@ type Worker struct {
 // StartWorker is unsupported off Unix.
 func StartWorker() (*Worker, error) { return nil, ErrUnsupported }
 
+// Done returns a nil channel (never ready) off Unix.
+func (w *Worker) Done() <-chan struct{} { return nil }
+
 // DialLDAP is unsupported off Unix.
 func (w *Worker) DialLDAP() (net.Conn, error) { return nil, ErrUnsupported }
 
