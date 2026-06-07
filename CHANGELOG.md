@@ -33,4 +33,4 @@ First public release.
 - Docs and OpenBSD operational examples: `weft.toml`, `ldapd.conf` (schema +
   ACLs), `rc.d` service, `relayd` TLS termination.
 
-[0.1.0]: https://github.com/USER/weft/releases/tag/v0.1.0
+[0.1.0]: https://github.com/isnogudus/weft/releases/tag/v0.1.0
