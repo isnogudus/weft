@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Support for connecting to ldapd over a local Unix socket via an `ldapi://`
+  `ldap_url` (e.g. `ldapi:///var/run/ldapi`). For ldapi the connection is local
+  and secured by filesystem permissions, so `tls_mode`, `ca_cert_file`,
+  `insecure_skip_verify` and `allow_plain_bind` are ignored, and the
+  network-plaintext warning is suppressed.
+
 ## [0.1.0] - 2026-06-07
 
 First public release.

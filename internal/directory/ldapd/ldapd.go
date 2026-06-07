@@ -72,6 +72,11 @@ func (d *Directory) tlsConfig() (*tls.Config, error) {
 }
 
 func (d *Directory) dial() (*ldap.Conn, error) {
+	// ldapi:// is a local Unix socket: dial it directly, ignoring tls_mode and
+	// allow_plain_bind (there is no transport security to apply).
+	if d.cfg.IsLDAPI() {
+		return ldap.DialURL(d.cfg.LDAPURL)
+	}
 	switch d.cfg.TLSMode {
 	case config.TLSLDAPS:
 		t, err := d.tlsConfig()

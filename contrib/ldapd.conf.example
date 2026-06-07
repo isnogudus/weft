@@ -16,6 +16,9 @@ schema "/etc/ldap/nis.schema"
 
 listen on lo0
 listen on lo0 tls          # if you want weft -> ldapd over TLS on localhost
+listen on "/var/run/ldapi" # local Unix socket; weft can use ldapi:///var/run/ldapi
+                           # (no TLS needed -- secured by filesystem permissions).
+                           # Ensure weft's user (_weft) may access the socket.
 
 # The namespace suffix MUST equal weft's base_dn. The directory may start
 # completely empty: weft's setup wizard creates the base entry itself, then

@@ -139,8 +139,15 @@ prefer `ca_cert_file`), `-dev`, `-version`. Key env overrides: `WEFT_LDAP_URL`,
 `WEFT_BASE_DN`, `WEFT_ADMIN_UID`, `WEFT_ADMIN_DN`, `WEFT_LISTEN_ADDR`,
 `WEFT_TLS_MODE`, `WEFT_SESSION_TIMEOUT`, `WEFT_INSECURE_SKIP_VERIFY`.
 
+For a same-host deployment, point `ldap_url` at ldapd's Unix socket —
+`ldap_url = "ldapi:///var/run/ldapi"` (with `listen on "/var/run/ldapi"` in
+`ldapd.conf`). With an `ldapi://` url the connection is local and secured by
+filesystem permissions, so `tls_mode`, `ca_cert_file`, `insecure_skip_verify`
+and `allow_plain_bind` are all ignored — no TLS or certificates needed.
+
 At startup weft logs the LDAP server URL, the resolved admin bind DN, and (when
-enabled) warnings for `insecure_skip_verify` / `tls_mode=plain`. Every HTTP
+enabled) warnings for `insecure_skip_verify` / `tls_mode=plain` (suppressed for
+`ldapi://`). Every HTTP
 request is logged as `METHOD /path -> status (duration)` (never bodies or
 credentials); unknown `/api` paths return a JSON `{"error":"unbekannter
 API-Endpunkt: …"}` so they are distinguishable from a proxy's 404.

@@ -156,6 +156,15 @@ func (c Config) IsAdminUID(uid string) bool {
 	return c.AdminUID != "" && strings.EqualFold(uid, c.AdminUID)
 }
 
+// IsLDAPI reports whether ldap_url uses the ldapi:// scheme (a local Unix-domain
+// socket, e.g. "ldapi:///var/run/ldapi"). For ldapi the connection is local and
+// secured by filesystem permissions, so TLS and allow_plain_bind do not apply
+// and are ignored.
+func (c Config) IsLDAPI() bool {
+	u, err := url.Parse(c.LDAPURL)
+	return err == nil && strings.EqualFold(u.Scheme, "ldapi")
+}
+
 // Validate checks the resolved configuration for consistency.
 func (c Config) Validate() error {
 	if c.LDAPURL == "" {
@@ -165,17 +174,21 @@ func (c Config) Validate() error {
 	if err != nil {
 		return fmt.Errorf("config: invalid ldap_url: %w", err)
 	}
-	switch c.TLSMode {
-	case TLSLDAPS, TLSStartTLS:
-	case TLSPlain:
-		if !c.AllowPlainBind {
-			return fmt.Errorf("config: tls_mode=plain requires allow_plain_bind=true (dev only)")
+	// ldapi:// is a local Unix socket: it overrides and ignores tls_mode and
+	// allow_plain_bind (there is no transport to secure).
+	if !c.IsLDAPI() {
+		switch c.TLSMode {
+		case TLSLDAPS, TLSStartTLS:
+		case TLSPlain:
+			if !c.AllowPlainBind {
+				return fmt.Errorf("config: tls_mode=plain requires allow_plain_bind=true (dev only)")
+			}
+		default:
+			return fmt.Errorf("config: invalid tls_mode %q", c.TLSMode)
 		}
-	default:
-		return fmt.Errorf("config: invalid tls_mode %q", c.TLSMode)
-	}
-	if c.TLSMode == TLSLDAPS && u.Scheme != "ldaps" {
-		return fmt.Errorf("config: tls_mode=ldaps but ldap_url scheme is %q", u.Scheme)
+		if c.TLSMode == TLSLDAPS && u.Scheme != "ldaps" {
+			return fmt.Errorf("config: tls_mode=ldaps but ldap_url scheme is %q", u.Scheme)
+		}
 	}
 	if c.BaseDN == "" {
 		return fmt.Errorf("config: base_dn is required")

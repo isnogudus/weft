@@ -69,16 +69,24 @@ func run() error {
 			return err
 		}
 		dir = ldapd.New(cfg)
-		log.Printf("LDAP server: %s (tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.TLSMode, cfg.BaseDN)
+		if cfg.IsLDAPI() {
+			log.Printf("LDAP server: %s (local unix socket, secured by file permissions; tls_mode/allow_plain_bind ignored), base_dn=%q",
+				cfg.LDAPURL, cfg.BaseDN)
+		} else {
+			log.Printf("LDAP server: %s (tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.TLSMode, cfg.BaseDN)
+		}
 	}
 	// Print the resolved admin bind DN -- it MUST match ldapd's rootdn.
 	log.Printf("admin login: type uid %q; it binds as %q (must equal ldapd rootdn)",
 		cfg.AdminUID, cfg.AdminBindDN())
-	if cfg.InsecureSkipVerify {
-		log.Print("WARNING: insecure_skip_verify is enabled -- TLS certificates are not validated")
-	}
-	if cfg.TLSMode == config.TLSPlain {
-		log.Print("WARNING: tls_mode=plain -- credentials are sent without TLS (dev only)")
+	// TLS warnings only apply to network transports, not the local ldapi socket.
+	if !cfg.IsLDAPI() {
+		if cfg.InsecureSkipVerify {
+			log.Print("WARNING: insecure_skip_verify is enabled -- TLS certificates are not validated")
+		}
+		if cfg.TLSMode == config.TLSPlain {
+			log.Print("WARNING: tls_mode=plain -- credentials are sent without TLS (dev only)")
+		}
 	}
 
 	assets, err := web.Assets()

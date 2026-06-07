@@ -38,6 +38,27 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestLDAPIOverridesTLS(t *testing.T) {
+	c := validBase()
+	c.LDAPURL = "ldapi:///var/run/ldapi"
+	// tls_mode stays at its default (ldaps) and allow_plain_bind is false;
+	// for ldapi both must be ignored, so Validate must still pass.
+	if !c.IsLDAPI() {
+		t.Fatal("IsLDAPI should be true for ldapi:// url")
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("ldapi config should validate despite tls_mode/allow_plain_bind: %v", err)
+	}
+
+	// A non-ldapi url with the same (mismatching) tls_mode must still fail.
+	c2 := validBase()
+	c2.LDAPURL = "ldap://localhost:389"
+	c2.TLSMode = TLSLDAPS
+	if err := c2.Validate(); err == nil {
+		t.Fatal("tls_mode=ldaps with ldap:// scheme should fail")
+	}
+}
+
 func TestDNHelpers(t *testing.T) {
 	c := validBase()
 	if got := c.UserDN("alice"); got != "uid=alice,ou=people,dc=example,dc=org" {
