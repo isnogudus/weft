@@ -92,9 +92,11 @@ func RunMonitor(ln *net.TCPListener, dial RawDialer, confine func() error) error
 	lnFile.Close()
 	shutdownR.Close()
 
-	// On a terminating signal, close the shutdown pipe to stop the worker.
+	// On a terminating signal (incl. SIGHUP), close the shutdown pipe to stop the
+	// worker, then let cmd.Wait() return -- an orderly shutdown instead of the
+	// default hard kill.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		if _, ok := <-sigCh; ok {
 			shutdownW.Close()

@@ -1,0 +1,11 @@
+#!/bin/sh
+# runit service for weft. Install at /etc/sv/weft/run (chmod +x), then enable:
+#   ln -s /etc/sv/weft /var/service/weft      # path is distro-dependent
+#
+# weft runs in the foreground and re-execs an unprivileged, chrooted worker
+# itself, so start it as root (do NOT drop privileges here -- weft does that).
+#
+# weft logs to stderr. 'exec 2>&1' routes stderr to stdout, which runit pipes to
+# the log service (./log/run, svlogd) below.
+exec 2>&1
+exec /usr/local/bin/weft -config /etc/weft.toml

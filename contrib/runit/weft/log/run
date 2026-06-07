@@ -1,0 +1,5 @@
+#!/bin/sh
+# runit log service for weft: timestamps each line and writes rotated logs to
+# /var/log/weft (current + rotated files). Create the directory first:
+#   mkdir -p /var/log/weft
+exec svlogd -tt /var/log/weft

@@ -266,6 +266,27 @@ OpenBSD-specific.
    `X-Forwarded-For` so the login rate limit keys correctly. (For a standalone
    setup without a proxy, set `tls_cert_file`/`tls_key_file` in `weft.toml`.)
 
+Under a supervisor instead of rc.d — e.g. **runit** — use
+[`contrib/runit/`](contrib/runit/): a `run` script that `exec`s weft as root in
+the foreground (weft re-execs the chrooted worker itself), plus a `log/run` that
+captures the logs with `svlogd`.
+
+## Logging
+
+weft logs to **stderr** (Go's standard logger — no syslog, no log file of its
+own), one line per request and for lifecycle events, so the process supervisor
+owns log capture and rotation:
+
+- **runit:** the example `run` does `exec 2>&1` and the `log/run` service runs
+  `svlogd -tt /var/log/weft` → timestamped, rotated logs in `/var/log/weft`.
+- **OpenBSD `rc.d`:** stderr is not captured by default; redirect it in the rc
+  script or run weft under a supervisor. (Native syslog support can be added if
+  wanted — open an issue.)
+
+Credentials and password material are never logged. With privsep, both the
+monitor and the worker write to the same inherited stderr, so all logs appear in
+one stream.
+
 ## API sketch
 
 All under `/api`, JSON. Writes require the CSRF header.
