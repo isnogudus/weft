@@ -12,11 +12,13 @@ All notable changes to this project are documented here. The format is based on
   and secured by filesystem permissions, so `tls_mode`, `ca_cert_file`,
   `insecure_skip_verify` and `allow_plain_bind` are ignored, and the
   network-plaintext warning is suppressed.
-- OpenBSD process sandboxing (`sandbox` / `chroot` / `user` / `group` options).
-  After reading all files and opening the listener, weft confines itself with
-  `pledge(2)`/`unveil(2)`; when started as root it also `chroot(2)`s (default
-  `/var/empty`) and drops privileges to `_weft`. No-op on other platforms. The
-  rc.d example now starts weft as root so it can drop privileges itself.
+- Process sandboxing (`sandbox` / `chroot` / `user` / `group` options). After
+  reading all files and opening the listener, when started as root weft
+  `chroot(2)`s (default `/var/empty`) and drops privileges to `_weft` — on Linux,
+  macOS, FreeBSD and the BSDs. On OpenBSD it additionally applies
+  `pledge(2)`/`unveil(2)`. The chroot/privdrop is skipped when not root; no-op on
+  non-Unix platforms. The rc.d example now starts weft as root so it can drop
+  privileges itself.
 
 ### Changed
 - The ldapd TLS configuration (CA file / system trust store) is now loaded once

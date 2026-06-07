@@ -123,7 +123,11 @@ func run() error {
 		})
 	}
 
-	// Confine the process: every file has been read and the socket is open.
+	// Confine the process. This is intentionally the LAST step before serving:
+	// the config, the CA / system trust store (in ldapd.New), the TLS keypair
+	// and the embedded SPA have all been read, and the listening socket is open.
+	// After this, chroot makes the original filesystem unreachable and the
+	// privilege drop removes root, so nothing further may read root-owned files.
 	if !*dev {
 		if cfg.Sandbox && os.Geteuid() == 0 && cfg.Chroot != "" {
 			if cfg.IsLDAPI() {

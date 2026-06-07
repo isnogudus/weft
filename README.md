@@ -23,9 +23,9 @@ identifiers and API are English.
   only), a shared default primary group, bcrypt `{CRYPT}` passwords.
 - **Bilingual UI.** German/English, toggled in the header (DE/EN) and remembered
   per browser; defaults to the browser language.
-- **OpenBSD sandboxing.** After reading its files weft confines itself with
-  `pledge(2)`/`unveil(2)`, and — when started as root — `chroot(2)`s and drops
-  privileges to `_weft`.
+- **Process sandboxing.** After reading its files, when started as root weft
+  `chroot(2)`s and drops privileges to `_weft` (Linux, macOS, FreeBSD, the BSDs);
+  on OpenBSD it additionally applies `pledge(2)`/`unveil(2)`.
 
 ## Authorization model (read this)
 
@@ -192,23 +192,24 @@ In `-dev` mode the admin is `admin` / `rootpw` (override with `-dev-rootpw`).
   `insecure_skip_verify` / `-insecure` (a startup warning is logged); prefer
   pinning the CA with `ca_cert_file`.
 
-### Sandboxing (OpenBSD)
+### Sandboxing
 
-On OpenBSD weft confines itself **after** reading every file it needs (config,
-CA bundle / system trust store, TLS keypair) and opening its listening socket:
+weft confines itself **after** reading every file it needs (config, CA bundle /
+system trust store, TLS keypair) and opening its listening socket — this is the
+last step before serving, so nothing root-owned is read afterwards.
 
-- `pledge(2)` reduces the permitted syscalls to roughly `stdio rpath inet`
-  (plus `dns` for hostname resolution, `unix` for an ldapi socket).
-- `unveil(2)` restricts (or, under chroot, removes) filesystem access.
-- When **started as root**, weft additionally `chroot(2)`s to `chroot`
-  (default `/var/empty`) and drops privileges to `user`/`group` (default
-  `_weft`). If not started as root, the chroot/privdrop step is skipped and only
-  `pledge`/`unveil` apply.
+- **Cross-platform (Linux, macOS, FreeBSD, the BSDs):** when **started as root**
+  weft `chroot(2)`s to `chroot` (default `/var/empty`) and drops privileges to
+  `user`/`group` (default `_weft`). If not started as root, this step is skipped.
+- **OpenBSD additionally:** `pledge(2)` reduces the permitted syscalls to roughly
+  `stdio rpath inet` (plus `dns` for hostname resolution, `unix` for an ldapi
+  socket), and `unveil(2)` restricts (or, under chroot, removes) filesystem
+  access.
 
 This is why the rc.d script starts weft as root (it drops privileges itself —
 see [`contrib/weft.rc`](contrib/weft.rc)). Everything is controlled by the
-`sandbox` / `chroot` / `user` / `group` options and is a no-op on other
-platforms.
+`sandbox` / `chroot` / `user` / `group` options; on non-Unix platforms it is a
+no-op.
 
 Caveat: a chroot to `/var/empty` cannot reach DNS config or Unix sockets. For a
 chrooted deployment use `ldaps://<IP>` with a `ca_cert_file`. If you connect via
@@ -232,7 +233,7 @@ combination).
 3. Install the rc.d script [`contrib/weft.rc`](contrib/weft.rc) as
    `/etc/rc.d/weft`, then `rcctl enable weft && rcctl start weft`. weft chroots
    to `/var/empty` and drops to `_weft` after startup (see
-   [Sandboxing](#sandboxing-openbsd); set `sandbox=false` to opt out).
+   [Sandboxing](#sandboxing); set `sandbox=false` to opt out).
 4. Terminate TLS in front of weft with `relayd` (or `httpd`) — see
    [`contrib/relayd.conf.example`](contrib/relayd.conf.example). weft listens on
    `127.0.0.1:8080`; the proxy should forward the real client IP via

@@ -53,10 +53,11 @@ admin_uid = "admin"
 # bcrypt_cost         = 12
 # max_password_length = 72       # bcrypt truncates beyond 72 bytes
 
-# --- Sandbox (OpenBSD only; ignored on other platforms) ---
-# After reading all files, weft confines itself with pledge(2)/unveil(2). When
-# STARTED AS ROOT it additionally chroot(2)s and drops privileges to `user`
-# (chroot is skipped automatically when not started as root).
+# --- Sandbox ---
+# After reading all files, when STARTED AS ROOT weft chroot(2)s and drops
+# privileges to `user`/`group` (Linux, macOS, FreeBSD, the BSDs). On OpenBSD it
+# additionally applies pledge(2)/unveil(2). The chroot/privdrop is skipped
+# automatically when not started as root; on non-Unix platforms it is a no-op.
 # sandbox = true             # master switch for all OS sandboxing
 # chroot  = "/var/empty"     # chroot dir when root; "" disables chroot (keeps privdrop)
 # user    = "_weft"          # drop to this user when root; "" keeps the current uid
