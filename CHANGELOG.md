@@ -4,53 +4,43 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-06-07
 
 ### Added
+- **Privilege separation** (Unix) is now the process model for every non-`-dev`
+  run. A small privileged monitor opens LDAP connections (DNS + connect, TCP or
+  the ldapi socket) and passes the connected descriptors to a re-exec'd,
+  unprivileged worker over a `socketpair` (`SCM_RIGHTS`). Started as root the
+  worker `chroot(2)`s to `/var/empty` and drops privileges to `_weft`; without
+  root those steps are skipped but the same split applies. On OpenBSD the monitor
+  and worker are confined with `pledge(2)`/`unveil(2)` to minimal promise sets and
+  paths. The monitor stops the worker by closing a shutdown pipe (no `kill`/`proc`);
+  if the monitor dies the worker follows rather than being orphaned.
+  `SIGHUP`/`SIGINT`/`SIGTERM` all shut down cleanly. Controlled by `sandbox` /
+  `chroot` / `user` / `group`. `-dev` and non-Unix platforms run single-process.
+- Connect to ldapd over a local Unix socket via an `ldapi://` `ldap_url` (e.g.
+  `ldapi:///var/run/ldapi`). The connection is local and secured by filesystem
+  permissions, so `tls_mode` / `ca_cert_file` / `insecure_skip_verify` /
+  `allow_plain_bind` are ignored.
+- Optional syslog logging (`log = "syslog"`, `syslog_tag`). Under privsep the
+  non-chrooted monitor owns the syslog connection (reconnecting across syslogd
+  restarts, with an stderr fallback) and forwards the chrooted worker's log lines,
+  so the worker never needs `/dev/log` in its chroot.
 - `allow_admin` option (default true). Set false for a self-service-only
   deployment: the admin uid is rejected at login, so no admin/management UI is
   reachable. The active mode is logged at startup ("admin login: ENABLED/DISABLED").
-- Idle auto-logout: the server already expires sessions after `session_timeout`
-  of inactivity; the SPA now switches to the login view when the session expires
-  (an idle timer plus a 401 fallback).
-- Support for connecting to ldapd over a local Unix socket via an `ldapi://`
-  `ldap_url` (e.g. `ldapi:///var/run/ldapi`). For ldapi the connection is local
-  and secured by filesystem permissions, so `tls_mode`, `ca_cert_file`,
-  `insecure_skip_verify` and `allow_plain_bind` are ignored, and the
-  network-plaintext warning is suppressed.
-- Process sandboxing (`sandbox` / `chroot` / `user` / `group` options). After
-  reading all files and opening the listener, when started as root weft
-  `chroot(2)`s (default `/var/empty`) and drops privileges to `_weft` — on Linux,
-  macOS, FreeBSD and the BSDs. On OpenBSD it additionally applies
-  `pledge(2)`/`unveil(2)`. The chroot/privdrop is skipped when not root; no-op on
-  non-Unix platforms. The rc.d example now starts weft as root so it can drop
-  privileges itself.
-
-- Privilege separation (Unix) is the process model for every non-`-dev` run. A
-  privileged monitor process opens LDAP connections (DNS + connect, TCP or ldapi)
-  and passes the connected descriptors to a re-exec'd, unprivileged worker over a
-  socketpair (`SCM_RIGHTS`). Started as root the worker chroots to `/var/empty`
-  and drops privileges; without root those steps are skipped but the same split
-  applies. The worker keeps its chroot even with a hostname or ldapi endpoint. On
-  OpenBSD the monitor and worker are pledged to minimal promise sets (`…sendfd` /
-  `…recvfd`) and unveiled to just the paths they use. The monitor stops the worker
-  by closing a shutdown pipe (no `kill`/`proc`); if the monitor dies the worker
-  follows rather than being orphaned. `SIGHUP`/`SIGINT`/`SIGTERM` all trigger a
-  clean shutdown. `-dev` and non-Unix platforms run as a single process.
+- Idle auto-logout: the server expires sessions after `session_timeout` of
+  inactivity (sliding); the SPA now switches to the login view on expiry.
+- `-insecure` flag / `insecure_skip_verify` to skip LDAP TLS verification for a
+  self-signed server (with a startup warning).
 - runit service example under `contrib/runit/` (foreground `run` + `svlogd`
-  `log/run`). weft logs to stderr for the supervisor to capture.
-- Optional syslog logging (`log = "syslog"`, `syslog_tag`). Under privsep the
-  non-chrooted monitor owns the syslog connection (reconnecting across syslogd
-  restarts, with an stderr fallback) and forwards the chrooted worker's log
-  lines to it, so the worker never needs `/dev/log` in its chroot.
+  `log/run`).
 
 ### Changed
-- The ldapd TLS configuration (CA file / system trust store) is now loaded once
-  at startup instead of per-connection, so no certificate file is read after the
-  sandbox locks the filesystem.
-- LDAP connections are now built from a raw transport connection (injected
-  dialer) plus an explicit TLS step, instead of `ldap.DialURL`, so the same code
-  serves both the default network dialer and the privsep fd-based dialer.
+- The ldapd TLS configuration (CA file / system trust store) is loaded once at
+  startup; LDAP connections are built from an injected raw dialer plus an explicit
+  TLS step (instead of `ldap.DialURL`), shared by the default network dialer and
+  the privsep fd-based dialer.
 
 ## [0.1.0] - 2026-06-07
 
@@ -81,4 +71,5 @@ First public release.
 - Docs and OpenBSD operational examples: `weft.toml`, `ldapd.conf` (schema +
   ACLs), `rc.d` service, `relayd` TLS termination.
 
+[0.2.0]: https://github.com/isnogudus/weft/releases/tag/v0.2.0
 [0.1.0]: https://github.com/isnogudus/weft/releases/tag/v0.1.0
