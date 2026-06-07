@@ -228,7 +228,8 @@ two processes, in the style of OpenBSD daemons:
 - A small **privileged monitor** opens connections to the LDAP server — DNS +
   `connect`, for TCP *or* the ldapi Unix socket — and passes the connected file
   descriptors to the worker over a `socketpair` using `SCM_RIGHTS`. It parses no
-  request data. On OpenBSD it is pledged to `stdio rpath inet dns unix sendfd`.
+  request data. On OpenBSD it is pledged to `stdio rpath inet dns unix sendfd
+  proc` (`proc` so it can forward terminating signals to the worker).
 - An unprivileged **worker** (re-exec'd, `chroot`ed to `/var/empty`, dropped to
   `_weft`) serves HTTP and the JSON API and speaks LDAP over the descriptors it
   receives. It never needs DNS, the ldapi socket, or any filesystem, so the

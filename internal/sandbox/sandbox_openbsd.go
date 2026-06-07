@@ -98,12 +98,15 @@ func ConfineWorker(c Config) error {
 }
 
 // ConfineMonitor confines the privsep monitor: it stays privileged (it opens
-// LDAP connections) but is pledged to just dial + pass descriptors.
+// LDAP connections) but is pledged to dial + pass descriptors + manage its one
+// child. "proc" is needed because the monitor forwards terminating signals to
+// the worker (kill(2)), so that e.g. `rcctl stop` (which signals only the
+// monitor) shuts the worker down cleanly.
 func ConfineMonitor(c Config) error {
 	if !c.Enabled {
 		return nil
 	}
-	const promises = "stdio rpath inet dns unix sendfd"
+	const promises = "stdio rpath inet dns unix sendfd proc"
 	if err := unix.PledgePromises(promises); err != nil {
 		return fmt.Errorf("pledge %q: %w", promises, err)
 	}
