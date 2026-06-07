@@ -12,3 +12,9 @@ func Apply(c Config) error {
 	}
 	return nil
 }
+
+// ConfineWorker is a no-op on non-Unix platforms.
+func ConfineWorker(c Config) error { return nil }
+
+// ConfineMonitor is a no-op on non-Unix platforms.
+func ConfineMonitor(c Config) error { return nil }

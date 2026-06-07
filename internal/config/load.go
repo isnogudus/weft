@@ -38,6 +38,9 @@ func applyEnv(c *Config) error {
 	if err := envBool("WEFT_SANDBOX", &c.Sandbox); err != nil {
 		return err
 	}
+	if err := envBool("WEFT_PRIVSEP", &c.Privsep); err != nil {
+		return err
+	}
 	envStr("WEFT_LISTEN_ADDR", &c.ListenAddr)
 	envStr("WEFT_CA_CERT_FILE", &c.CACertFile)
 	envStr("WEFT_TLS_CERT_FILE", &c.TLSCertFile)

@@ -70,6 +70,43 @@ func runtimePaths(c Config) map[string]string {
 	return paths
 }
 
+// ConfineWorker confines the privsep worker: chroot + privilege drop, then
+// pledge to a minimal set. The worker never opens LDAP connections itself (the
+// monitor passes descriptors), so it needs no DNS, no outbound dialing and no
+// filesystem -- "stdio inet recvfd" (inet to accept on the HTTP listener,
+// recvfd to receive passed descriptors).
+func ConfineWorker(c Config) error {
+	if !c.Enabled {
+		return nil
+	}
+	if _, err := chrootAndDrop(c); err != nil {
+		return err
+	}
+	if err := unix.UnveilBlock(); err != nil {
+		return fmt.Errorf("unveil lock: %w", err)
+	}
+	const promises = "stdio inet recvfd"
+	if err := unix.PledgePromises(promises); err != nil {
+		return fmt.Errorf("pledge %q: %w", promises, err)
+	}
+	log.Printf("sandbox: worker pledge(%q); filesystem locked", promises)
+	return nil
+}
+
+// ConfineMonitor confines the privsep monitor: it stays privileged (it opens
+// LDAP connections) but is pledged to just dial + pass descriptors.
+func ConfineMonitor(c Config) error {
+	if !c.Enabled {
+		return nil
+	}
+	const promises = "stdio rpath inet dns unix sendfd"
+	if err := unix.PledgePromises(promises); err != nil {
+		return fmt.Errorf("pledge %q: %w", promises, err)
+	}
+	log.Printf("sandbox: monitor pledge(%q)", promises)
+	return nil
+}
+
 func pledgePromises(c Config) string {
 	p := "stdio rpath inet"
 	if c.NeedsDNS {

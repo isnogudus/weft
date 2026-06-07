@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"weft/internal/directory"
 	"weft/internal/directory/fake"
 	"weft/internal/directory/ldapd"
+	"weft/internal/privsep"
 	"weft/internal/sandbox"
 	"weft/internal/server"
 	"weft/web"
@@ -62,85 +64,62 @@ func run() error {
 		cfg.InsecureSkipVerify = true
 	}
 
-	var dir directory.Directory
-	if *dev {
-		cfg = devDefaults(cfg)
-		dir = fake.New(*devRootpw, cfg.UIDRange(), cfg.GIDRange())
-		log.Printf("DEV MODE: in-memory fake directory, admin uid=%q password=%q", cfg.AdminUID, *devRootpw)
-	} else {
-		if err := cfg.Validate(); err != nil {
-			return err
-		}
-		// New reads the CA / captures system roots now, before sandboxing.
-		d, err := ldapd.New(cfg)
-		if err != nil {
-			return err
-		}
-		dir = d
-		if cfg.IsLDAPI() {
-			log.Printf("LDAP server: %s (local unix socket, secured by file permissions; tls_mode/allow_plain_bind ignored), base_dn=%q",
-				cfg.LDAPURL, cfg.BaseDN)
-		} else {
-			log.Printf("LDAP server: %s (tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.TLSMode, cfg.BaseDN)
-		}
-	}
-	// Print the resolved admin bind DN -- it MUST match ldapd's rootdn.
-	log.Printf("admin login: type uid %q; it binds as %q (must equal ldapd rootdn)",
-		cfg.AdminUID, cfg.AdminBindDN())
-	// TLS warnings only apply to network transports, not the local ldapi socket.
-	if !cfg.IsLDAPI() {
-		if cfg.InsecureSkipVerify {
-			log.Print("WARNING: insecure_skip_verify is enabled -- TLS certificates are not validated")
-		}
-		if cfg.TLSMode == config.TLSPlain {
-			log.Print("WARNING: tls_mode=plain -- credentials are sent without TLS (dev only)")
-		}
-	}
-
 	assets, err := web.Assets()
 	if err != nil {
 		return fmt.Errorf("loading embedded frontend: %w", err)
 	}
 
+	switch {
+	case privsep.IsWorker():
+		return runWorker(cfg, assets)
+	case !*dev && cfg.Privsep && privsep.Supported:
+		return runMonitor(cfg)
+	default:
+		return runSingle(cfg, *dev, *devRootpw, assets)
+	}
+}
+
+// runSingle is the classic single-process mode (also used for -dev and when
+// privsep is disabled). It applies the in-process sandbox (chroot/drop/pledge).
+func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) error {
+	var dir directory.Directory
+	if dev {
+		cfg = devDefaults(cfg)
+		dir = fake.New(devRootpw, cfg.UIDRange(), cfg.GIDRange())
+		log.Printf("DEV MODE: in-memory fake directory, admin uid=%q password=%q", cfg.AdminUID, devRootpw)
+	} else {
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+		d, err := ldapd.New(cfg, nil) // default network dialer; reads CA/system roots now
+		if err != nil {
+			return err
+		}
+		dir = d
+		logStartup(cfg)
+	}
+
 	srv := server.New(cfg, dir, assets)
 	defer srv.Close()
 
-	// Open the listening socket BEFORE sandboxing: a privileged port can be
-	// bound while still root, and the TLS keypair is read before the FS is
-	// locked.
-	ln, err := net.Listen("tcp", cfg.ListenAddr)
+	ln, err := listen(cfg)
 	if err != nil {
-		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
-	}
-	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
-		if err != nil {
-			return fmt.Errorf("load tls keypair: %w", err)
-		}
-		ln = tls.NewListener(ln, &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
-		})
+		return err
 	}
 
-	// Confine the process. This is intentionally the LAST step before serving:
-	// the config, the CA / system trust store (in ldapd.New), the TLS keypair
-	// and the embedded SPA have all been read, and the listening socket is open.
-	// After this, chroot makes the original filesystem unreachable and the
-	// privilege drop removes root, so nothing further may read root-owned files.
-	if !*dev {
-		// A chroot can't reach an ldapi Unix socket (it lives outside the
-		// chroot), so skip the chroot in that case -- privilege drop and
-		// pledge/unveil (which unveils the socket) still apply.
+	if !dev {
+		// In-process confinement. A chroot can't reach an ldapi socket, so skip
+		// it in that case (privilege drop + pledge/unveil still apply). Use
+		// privsep to keep the chroot with ldapi or a hostname.
 		sbChroot := cfg.Chroot
 		if cfg.Sandbox && os.Geteuid() == 0 && sbChroot != "" {
 			switch {
 			case cfg.IsLDAPI():
-				log.Printf("sandbox: ldapi socket %q is outside the chroot; skipping chroot so LDAP stays reachable (privilege drop + pledge/unveil still apply). Set chroot=\"\" to silence.",
+				log.Printf("sandbox: ldapi socket %q is outside the chroot; skipping chroot (privilege drop + pledge/unveil still apply). Enable privsep to keep the chroot.",
 					cfg.LDAPISocketPath())
 				sbChroot = ""
 			case cfg.LDAPHostIsName():
-				log.Printf("WARNING: chroot %q is active and ldap_url uses a hostname -- DNS config is not inside the chroot; use an IP address or set chroot=\"\"",
+				log.Printf("WARNING: chroot %q is active and ldap_url uses a hostname -- DNS config is not inside the chroot; use an IP address, enable privsep, or set chroot=\"\"",
 					sbChroot)
 			}
 		}
@@ -158,17 +137,115 @@ func run() error {
 		}
 	}
 
-	httpSrv := &http.Server{
+	return serveAndWait(newHTTPServer(srv), ln, cfg.ListenAddr)
+}
+
+// runMonitor is the privileged side of privilege separation: it binds the
+// listener, re-execs the worker, and serves LDAP dial requests.
+func runMonitor(cfg config.Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	logStartup(cfg)
+
+	network, address, err := cfg.DialTarget()
+	if err != nil {
+		return err
+	}
+	dial := func() (net.Conn, error) { return net.DialTimeout(network, address, 10*time.Second) }
+
+	ln, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
+	}
+	tcpLn, ok := ln.(*net.TCPListener)
+	if !ok {
+		return fmt.Errorf("privsep: expected a TCP listener for %s", cfg.ListenAddr)
+	}
+	log.Printf("privsep: monitor (pid %d) opening LDAP connections on the worker's behalf; worker chroots to %q, drops to %q",
+		os.Getpid(), cfg.Chroot, cfg.User)
+
+	return privsep.RunMonitor(tcpLn, dial, func() error {
+		return sandbox.ConfineMonitor(sandbox.Config{Enabled: cfg.Sandbox})
+	})
+}
+
+// runWorker is the unprivileged side: it serves HTTP and the JSON API, asking
+// the monitor for LDAP connections. It chroots and drops privileges; in privsep
+// mode the worker never touches the filesystem for LDAP, so a /var/empty chroot
+// is safe even with a hostname or ldapi endpoint.
+func runWorker(cfg config.Config, assets fs.FS) error {
+	w, err := privsep.StartWorker()
+	if err != nil {
+		return err
+	}
+	dir, err := ldapd.New(cfg, w.DialLDAP) // warms the TLS trust store in this process
+	if err != nil {
+		return err
+	}
+
+	srv := server.New(cfg, dir, assets)
+	defer srv.Close()
+
+	ln, err := wrapTLS(cfg, w.Listener)
+	if err != nil {
+		return err
+	}
+
+	if err := sandbox.ConfineWorker(sandbox.Config{
+		Enabled: cfg.Sandbox,
+		Chroot:  cfg.Chroot,
+		User:    cfg.User,
+		Group:   cfg.Group,
+	}); err != nil {
+		return fmt.Errorf("sandbox worker: %w", err)
+	}
+	log.Printf("privsep: worker (pid %d) serving on %s", os.Getpid(), cfg.ListenAddr)
+
+	return serveAndWait(newHTTPServer(srv), ln, cfg.ListenAddr)
+}
+
+// --- helpers ---
+
+// listen opens the TCP listener and wraps it in TLS if a keypair is configured.
+func listen(cfg config.Config) (net.Listener, error) {
+	ln, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		return nil, fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
+	}
+	return wrapTLS(cfg, ln)
+}
+
+// wrapTLS wraps ln in a TLS listener when tls_cert_file/tls_key_file are set,
+// loading the keypair now (before any sandbox locks the filesystem).
+func wrapTLS(cfg config.Config, ln net.Listener) (net.Listener, error) {
+	if cfg.TLSCertFile == "" || cfg.TLSKeyFile == "" {
+		return ln, nil
+	}
+	cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load tls keypair: %w", err)
+	}
+	return tls.NewListener(ln, &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}), nil
+}
+
+func newHTTPServer(srv *server.Server) *http.Server {
+	return &http.Server{
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+}
 
+func serveAndWait(httpSrv *http.Server, ln net.Listener, addr string) error {
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("weft %s listening on %s", version, cfg.ListenAddr)
+		log.Printf("weft %s listening on %s", version, addr)
 		errCh <- httpSrv.Serve(ln)
 	}()
 
@@ -186,6 +263,27 @@ func run() error {
 		return httpSrv.Shutdown(ctx)
 	}
 	return nil
+}
+
+// logStartup prints the LDAP target, the resolved admin bind DN, and TLS
+// warnings (suppressed for the local ldapi socket).
+func logStartup(cfg config.Config) {
+	if cfg.IsLDAPI() {
+		log.Printf("LDAP server: %s (local unix socket, secured by file permissions; tls_mode/allow_plain_bind ignored), base_dn=%q",
+			cfg.LDAPURL, cfg.BaseDN)
+	} else {
+		log.Printf("LDAP server: %s (tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.TLSMode, cfg.BaseDN)
+	}
+	log.Printf("admin login: type uid %q; it binds as %q (must equal ldapd rootdn)",
+		cfg.AdminUID, cfg.AdminBindDN())
+	if !cfg.IsLDAPI() {
+		if cfg.InsecureSkipVerify {
+			log.Print("WARNING: insecure_skip_verify is enabled -- TLS certificates are not validated")
+		}
+		if cfg.TLSMode == config.TLSPlain {
+			log.Print("WARNING: tls_mode=plain -- credentials are sent without TLS (dev only)")
+		}
+	}
 }
 
 // devDefaults fills the minimum config needed for -dev mode.

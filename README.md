@@ -211,11 +211,32 @@ see [`contrib/weft.rc`](contrib/weft.rc)). Everything is controlled by the
 `sandbox` / `chroot` / `user` / `group` options; on non-Unix platforms it is a
 no-op.
 
-Caveat: a chroot to `/var/empty` cannot reach DNS config or Unix sockets. For a
-chrooted deployment use `ldaps://<IP>` with a `ca_cert_file`. With an `ldapi://`
-url weft **skips the chroot automatically** (the socket lives outside it) while
-still dropping privileges and applying `pledge`/`unveil`. With a hostname, use an
-IP address or set `chroot = ""`.
+Caveat (single-process mode): a chroot to `/var/empty` cannot reach DNS config or
+Unix sockets. For a chrooted deployment use `ldaps://<IP>` with a `ca_cert_file`.
+With an `ldapi://` url weft **skips the chroot automatically** (the socket lives
+outside it) while still dropping privileges and applying `pledge`/`unveil`. With
+a hostname, use an IP address, set `chroot = ""`, **or enable privsep** (below),
+which removes this caveat entirely.
+
+### Privilege separation (privsep)
+
+`privsep = true` (Unix; start weft as root) runs weft as two processes, in the
+style of OpenBSD daemons:
+
+- A small **privileged monitor** opens connections to the LDAP server — DNS +
+  `connect`, for TCP *or* the ldapi Unix socket — and passes the connected file
+  descriptors to the worker over a `socketpair` using `SCM_RIGHTS`. It parses no
+  request data. On OpenBSD it is pledged to `stdio rpath inet dns unix sendfd`.
+- An unprivileged **worker** (re-exec'd, `chroot`ed to `/var/empty`, dropped to
+  `_weft`) serves HTTP and the JSON API and speaks LDAP over the descriptors it
+  receives. It never needs DNS, the ldapi socket, or any filesystem, so the
+  `/var/empty` chroot holds for **every** transport — hostname or ldapi included.
+  On OpenBSD it is pledged to `stdio inet recvfd`.
+
+Because the monitor re-dials on demand, idle-dropped connections recover (unlike
+a static pre-opened pool). fd passing is a portable Unix mechanism, so privsep
+works on Linux/macOS/FreeBSD too — only the `pledge`/`unveil` layer is
+OpenBSD-specific.
 
 ## Deploy on OpenBSD
 

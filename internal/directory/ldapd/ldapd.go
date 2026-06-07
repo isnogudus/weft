@@ -18,10 +18,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-ldap/ldap/v3"
 
@@ -39,22 +41,36 @@ var (
 
 // Directory dials and binds against ldapd.
 type Directory struct {
-	cfg    config.Config
-	tlsCfg *tls.Config // built once at New(); nil for ldapi/plain
+	cfg     config.Config
+	tlsCfg  *tls.Config             // built once at New(); nil for ldapi/plain
+	dialRaw func() (net.Conn, error) // opens a raw (un-TLS'd) connection
 }
 
-// New returns a Directory for the given configuration. It builds the TLS
-// configuration up front -- reading the CA file or capturing the system trust
-// store now -- so that no certificate file is read after the process is
-// sandboxed (chroot/unveil) at startup.
-func New(cfg config.Config) (*Directory, error) {
-	d := &Directory{cfg: cfg}
+// New returns a Directory for the given configuration. dialRaw opens a raw,
+// un-TLS'd connection to the LDAP endpoint; pass nil to use the default network
+// dialer (DNS + connect). Under privilege separation the worker passes a dialer
+// that requests a connected fd from the monitor instead.
+//
+// It builds the TLS configuration up front -- reading the CA file or capturing
+// the system trust store now -- so that no certificate file is read after the
+// process is sandboxed (chroot/unveil) at startup.
+func New(cfg config.Config, dialRaw func() (net.Conn, error)) (*Directory, error) {
+	d := &Directory{cfg: cfg, dialRaw: dialRaw}
 	if !cfg.IsLDAPI() && cfg.TLSMode != config.TLSPlain {
 		t, err := buildTLSConfig(cfg)
 		if err != nil {
 			return nil, err
 		}
 		d.tlsCfg = t
+	}
+	if d.dialRaw == nil {
+		network, address, err := cfg.DialTarget()
+		if err != nil {
+			return nil, err
+		}
+		d.dialRaw = func() (net.Conn, error) {
+			return net.DialTimeout(network, address, 10*time.Second)
+		}
 	}
 	return d, nil
 }
@@ -95,28 +111,46 @@ func buildTLSConfig(cfg config.Config) (*tls.Config, error) {
 	return t, nil
 }
 
+// dial opens a raw connection (network or via the privsep monitor) and wraps it
+// into an LDAP connection, applying TLS according to tls_mode.
 func (d *Directory) dial() (*ldap.Conn, error) {
-	// ldapi:// is a local Unix socket: dial it directly, ignoring tls_mode and
-	// allow_plain_bind (there is no transport security to apply).
-	if d.cfg.IsLDAPI() {
-		return ldap.DialURL(d.cfg.LDAPURL)
+	raw, err := d.dialRaw()
+	if err != nil {
+		return nil, err
+	}
+	return d.wrap(raw)
+}
+
+// wrap turns a raw transport connection into a started *ldap.Conn. The
+// connection's TLS handshake (if any) uses the pre-built tlsCfg, so no
+// certificate file is read here -- important once the process is sandboxed.
+func (d *Directory) wrap(raw net.Conn) (*ldap.Conn, error) {
+	// ldapi (local socket) and explicit plain: no TLS.
+	if d.cfg.IsLDAPI() || d.cfg.TLSMode == config.TLSPlain {
+		l := ldap.NewConn(raw, false)
+		l.Start()
+		return l, nil
 	}
 	switch d.cfg.TLSMode {
 	case config.TLSLDAPS:
-		return ldap.DialURL(d.cfg.LDAPURL, ldap.DialWithTLSConfig(d.tlsCfg))
-	case config.TLSStartTLS:
-		c, err := ldap.DialURL(d.cfg.LDAPURL)
-		if err != nil {
-			return nil, err
+		tconn := tls.Client(raw, d.tlsCfg)
+		if err := tconn.Handshake(); err != nil {
+			raw.Close()
+			return nil, fmt.Errorf("ldapd: tls handshake: %w", err)
 		}
-		if err := c.StartTLS(d.tlsCfg); err != nil {
-			c.Close()
+		l := ldap.NewConn(tconn, true)
+		l.Start()
+		return l, nil
+	case config.TLSStartTLS:
+		l := ldap.NewConn(raw, false)
+		l.Start()
+		if err := l.StartTLS(d.tlsCfg); err != nil {
+			l.Close()
 			return nil, fmt.Errorf("ldapd: starttls: %w", err)
 		}
-		return c, nil
-	case config.TLSPlain:
-		return ldap.DialURL(d.cfg.LDAPURL)
+		return l, nil
 	default:
+		raw.Close()
 		return nil, fmt.Errorf("ldapd: unknown tls mode %q", d.cfg.TLSMode)
 	}
 }

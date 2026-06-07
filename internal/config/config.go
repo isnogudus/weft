@@ -76,6 +76,12 @@ type Config struct {
 	User    string `toml:"user"`    // drop to this user when chrooting (default _weft)
 	Group   string `toml:"group"`   // drop to this group ("" = the user's primary group)
 
+	// Privsep enables privilege separation: a privileged monitor process opens
+	// LDAP connections and passes the descriptors to an unprivileged, chrooted
+	// worker. This lets the worker chroot even with a hostname or ldapi socket.
+	// Unix-only; ignored on other platforms.
+	Privsep bool `toml:"privsep"`
+
 	// HTTP server.
 	ListenAddr     string   `toml:"listen_addr"`
 	TLSCertFile    string   `toml:"tls_cert_file"` // optional standalone TLS
@@ -187,6 +193,29 @@ func (c Config) LDAPISocketPath() string {
 		return u.Path
 	}
 	return "/var/run/ldapi"
+}
+
+// DialTarget returns the (network, address) for a raw connection to the LDAP
+// server: ("unix", socketpath) for ldapi, otherwise ("tcp", host:port) with the
+// scheme's default port filled in. Used by the default dialer and by the
+// privsep monitor.
+func (c Config) DialTarget() (network, address string, err error) {
+	if c.IsLDAPI() {
+		return "unix", c.LDAPISocketPath(), nil
+	}
+	u, err := url.Parse(c.LDAPURL)
+	if err != nil {
+		return "", "", fmt.Errorf("config: invalid ldap_url: %w", err)
+	}
+	port := u.Port()
+	if port == "" {
+		if strings.EqualFold(u.Scheme, "ldaps") {
+			port = "636"
+		} else {
+			port = "389"
+		}
+	}
+	return "tcp", net.JoinHostPort(u.Hostname(), port), nil
 }
 
 // LDAPHostIsName reports whether the LDAP host is a DNS name (not an IP and not

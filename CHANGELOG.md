@@ -20,10 +20,20 @@ All notable changes to this project are documented here. The format is based on
   non-Unix platforms. The rc.d example now starts weft as root so it can drop
   privileges itself.
 
+- Privilege separation (`privsep` option, Unix). A privileged monitor process
+  opens LDAP connections (DNS + connect, TCP or ldapi) and passes the connected
+  descriptors to a re-exec'd, chrooted, unprivileged worker over a socketpair
+  (`SCM_RIGHTS`). The worker keeps its `/var/empty` chroot even with a hostname
+  or ldapi endpoint. On OpenBSD the monitor/worker are pledged to minimal
+  promise sets (`…sendfd` / `…recvfd`). Opt-in; start weft as root.
+
 ### Changed
 - The ldapd TLS configuration (CA file / system trust store) is now loaded once
   at startup instead of per-connection, so no certificate file is read after the
   sandbox locks the filesystem.
+- LDAP connections are now built from a raw transport connection (injected
+  dialer) plus an explicit TLS step, instead of `ldap.DialURL`, so the same code
+  serves both the default network dialer and the privsep fd-based dialer.
 
 ## [0.1.0] - 2026-06-07
 
