@@ -3,6 +3,7 @@
 package privsep
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
@@ -46,8 +47,10 @@ type RawDialer func() (net.Conn, error)
 // (one passed fd per request) until the worker exits. ln is the raw TCP
 // listener; the worker wraps it in TLS itself if configured. confine, if
 // non-nil, is called after the worker is started to confine the monitor itself
-// (e.g. pledge); terminating signals are forwarded to the worker.
-func RunMonitor(ln *net.TCPListener, dial RawDialer, confine func() error) error {
+// (e.g. pledge); terminating signals are forwarded to the worker. If logLine is
+// non-nil, the worker's stdout/stderr are captured and each line is handed to it
+// (used to forward the chrooted worker's logs to the monitor-owned syslog).
+func RunMonitor(ln *net.TCPListener, dial RawDialer, confine func() error, logLine func(string)) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("privsep: locate executable: %w", err)
@@ -77,13 +80,35 @@ func RunMonitor(ln *net.TCPListener, dial RawDialer, confine func() error) error
 
 	cmd := exec.Command(self, os.Args[1:]...)
 	cmd.Env = append(os.Environ(), workerEnv+"=1")
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Stdin = os.Stdin
+
+	// Capture the worker's stdout/stderr through a pipe when forwarding logs
+	// (syslog mode); otherwise let it share the monitor's streams.
+	var logR, logW *os.File
+	if logLine != nil {
+		logR, logW, err = os.Pipe()
+		if err != nil {
+			workerCtrl.Close()
+			lnFile.Close()
+			shutdownR.Close()
+			shutdownW.Close()
+			return fmt.Errorf("privsep: log pipe: %w", err)
+		}
+		cmd.Stdout, cmd.Stderr = logW, logW
+	} else {
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	}
+
 	cmd.ExtraFiles = []*os.File{workerCtrl, lnFile, shutdownR} // -> fd 3, 4, 5
 	if err := cmd.Start(); err != nil {
 		workerCtrl.Close()
 		lnFile.Close()
 		shutdownR.Close()
 		shutdownW.Close()
+		if logLine != nil {
+			logR.Close()
+			logW.Close()
+		}
 		return fmt.Errorf("privsep: start worker: %w", err)
 	}
 	// The child inherited dups; the monitor drops its own copies (but keeps the
@@ -91,6 +116,17 @@ func RunMonitor(ln *net.TCPListener, dial RawDialer, confine func() error) error
 	workerCtrl.Close()
 	lnFile.Close()
 	shutdownR.Close()
+	if logLine != nil {
+		logW.Close() // the worker holds the dup
+		go func() {
+			sc := bufio.NewScanner(logR)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				logLine(sc.Text())
+			}
+			logR.Close()
+		}()
+	}
 
 	// On a terminating signal (incl. SIGHUP), close the shutdown pipe to stop the
 	// worker, then let cmd.Wait() return -- an orderly shutdown instead of the

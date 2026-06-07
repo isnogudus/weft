@@ -82,6 +82,13 @@ type Config struct {
 	// Unix-only; ignored on other platforms.
 	Privsep bool `toml:"privsep"`
 
+	// Logging. "stderr" (default) lets the supervisor capture logs; "syslog"
+	// writes to the local syslog. Under privsep the monitor owns the syslog
+	// connection (and reconnects across syslogd restarts) and forwards the
+	// chrooted worker's log output to it.
+	Log       string `toml:"log"`        // "stderr" | "syslog"
+	SyslogTag string `toml:"syslog_tag"` // syslog program tag (default "weft")
+
 	// HTTP server.
 	ListenAddr     string   `toml:"listen_addr"`
 	TLSCertFile    string   `toml:"tls_cert_file"` // optional standalone TLS
@@ -127,6 +134,8 @@ func Default() Config {
 		MaxPasswordLength: 72,
 		Sandbox:           true,
 		Privsep:           true,
+		Log:               "stderr",
+		SyslogTag:         "weft",
 		Chroot:            "/var/empty",
 		User:              "_weft",
 		ListenAddr:        "127.0.0.1:8080",
@@ -269,6 +278,9 @@ func (c Config) Validate() error {
 	}
 	if c.BcryptCost < 4 || c.BcryptCost > 31 {
 		return fmt.Errorf("config: bcrypt_cost out of range (4..31)")
+	}
+	if c.Log != "stderr" && c.Log != "syslog" {
+		return fmt.Errorf("config: log must be \"stderr\" or \"syslog\"")
 	}
 	if c.InsecureSkipVerify {
 		// not fatal, but the server logs a warning at startup

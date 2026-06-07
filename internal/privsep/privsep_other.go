@@ -36,6 +36,6 @@ func (w *Worker) Done() <-chan struct{} { return nil }
 func (w *Worker) DialLDAP() (net.Conn, error) { return nil, ErrUnsupported }
 
 // RunMonitor is unsupported off Unix.
-func RunMonitor(ln *net.TCPListener, dial RawDialer, confine func() error) error {
+func RunMonitor(ln *net.TCPListener, dial RawDialer, confine func() error, logLine func(string)) error {
 	return ErrUnsupported
 }

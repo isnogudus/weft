@@ -78,6 +78,15 @@ admin_uid = "admin"
 # it); privilege drop and pledge/unveil still apply. With a hostname, use an IP
 # address or set chroot = "".
 
+# --- Logging ---
+# stderr (default): one line per request/event to stderr, for the supervisor to
+#   capture (journald, runit/svlogd, FreeBSD daemon(8) -S, ...).
+# syslog: write to the local syslog. Under privsep the (non-chrooted) monitor
+#   owns the syslog connection and reconnects across syslogd restarts, and
+#   forwards the chrooted worker's log lines to it. Idiomatic for OpenBSD rc.d.
+# log = "stderr"
+# syslog_tag = "weft"
+
 # --- HTTP server ---
 listen_addr = "127.0.0.1:8080"   # put relayd/httpd in front for TLS
 # tls_cert_file = "/etc/ssl/weft.crt"   # optional standalone TLS instead of a proxy

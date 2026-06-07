@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"weft/internal/applog"
 	"weft/internal/config"
 	"weft/internal/directory"
 	"weft/internal/directory/fake"
@@ -86,6 +87,9 @@ func run() error {
 // runSingle is the classic single-process mode (also used for -dev and when
 // privsep is disabled). It applies the in-process sandbox (chroot/drop/pledge).
 func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) error {
+	_, closeLog := setupLogging(cfg, "single")
+	defer closeLog()
+
 	var dir directory.Directory
 	if dev {
 		cfg = devDefaults(cfg)
@@ -154,6 +158,8 @@ func runMonitor(cfg config.Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	logLine, closeLog := setupLogging(cfg, "monitor")
+	defer closeLog()
 	logStartup(cfg)
 
 	network, address, err := cfg.DialTarget()
@@ -175,7 +181,7 @@ func runMonitor(cfg config.Config) error {
 
 	return privsep.RunMonitor(tcpLn, dial, func() error {
 		return sandbox.ConfineMonitor(sandbox.Config{Enabled: cfg.Sandbox})
-	})
+	}, logLine)
 }
 
 // runWorker is the unprivileged side: it serves HTTP and the JSON API, asking
@@ -183,6 +189,7 @@ func runMonitor(cfg config.Config) error {
 // mode the worker never touches the filesystem for LDAP, so a /var/empty chroot
 // is safe even with a hostname or ldapi endpoint.
 func runWorker(cfg config.Config, assets fs.FS) error {
+	setupLogging(cfg, "worker")
 	w, err := privsep.StartWorker()
 	if err != nil {
 		return err
@@ -255,6 +262,30 @@ func warmRuntime() {
 	_ = time.Now().Local().Format(time.RFC3339)
 	var b [1]byte
 	_, _ = rand.Read(b[:])
+}
+
+// setupLogging configures the log package for this process's role. In syslog
+// mode the monitor and the single-process own the syslog connection; the worker
+// keeps logging to stderr (it is chrooted and cannot reach /dev/log), and the
+// monitor forwards those lines. Returns a line sink for the monitor to forward
+// the worker's output (nil unless this is the monitor in syslog mode).
+func setupLogging(cfg config.Config, role string) (logLine func(string), closeFn func()) {
+	noop := func() {}
+	if cfg.Log != "syslog" {
+		return nil, noop
+	}
+	if role == "worker" {
+		log.SetFlags(0) // syslog adds its own timestamp; the monitor forwards us
+		return nil, noop
+	}
+	sink, err := applog.NewSyslog(cfg.SyslogTag)
+	if err != nil {
+		log.Printf("syslog unavailable (%v); logging to stderr", err)
+		return nil, noop
+	}
+	log.SetOutput(sink)
+	log.SetFlags(0)
+	return sink.WriteLine, func() { sink.Close() }
 }
 
 func newHTTPServer(srv *server.Server) *http.Server {

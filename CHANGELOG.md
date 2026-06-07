@@ -32,6 +32,10 @@ All notable changes to this project are documented here. The format is based on
   all trigger a clean shutdown.
 - runit service example under `contrib/runit/` (foreground `run` + `svlogd`
   `log/run`). weft logs to stderr for the supervisor to capture.
+- Optional syslog logging (`log = "syslog"`, `syslog_tag`). Under privsep the
+  non-chrooted monitor owns the syslog connection (reconnecting across syslogd
+  restarts, with an stderr fallback) and forwards the chrooted worker's log
+  lines to it, so the worker never needs `/dev/log` in its chroot.
 
 ### Changed
 - The ldapd TLS configuration (CA file / system trust store) is now loaded once

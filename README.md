@@ -279,13 +279,18 @@ owns log capture and rotation:
 
 - **runit:** the example `run` does `exec 2>&1` and the `log/run` service runs
   `svlogd -tt /var/log/weft` → timestamped, rotated logs in `/var/log/weft`.
-- **OpenBSD `rc.d`:** stderr is not captured by default; redirect it in the rc
-  script or run weft under a supervisor. (Native syslog support can be added if
-  wanted — open an issue.)
+- **OpenBSD `rc.d`:** stderr is not captured by default. Either run weft under a
+  supervisor, or set `log = "syslog"`.
 
-Credentials and password material are never logged. With privsep, both the
-monitor and the worker write to the same inherited stderr, so all logs appear in
-one stream.
+Set `log = "syslog"` (`syslog_tag` defaults to `weft`, facility `LOG_DAEMON`) to
+write to the local syslog instead. Under privsep this is done right: the
+**non-chrooted monitor owns the syslog connection** — it reconnects across
+`syslogd` restarts (and falls back to stderr while syslog is unreachable) — and
+**forwards the chrooted worker's log lines** to it (the worker can't reach
+`/dev/log` from `/var/empty`, so it logs to stderr, which the monitor captures).
+
+Credentials and password material are never logged. All logs — monitor and
+worker — end up in one stream.
 
 ## API sketch
 

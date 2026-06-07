@@ -35,6 +35,8 @@ func applyEnv(c *Config) error {
 	envStr("WEFT_CHROOT", &c.Chroot)
 	envStr("WEFT_USER", &c.User)
 	envStr("WEFT_GROUP", &c.Group)
+	envStr("WEFT_LOG", &c.Log)
+	envStr("WEFT_SYSLOG_TAG", &c.SyslogTag)
 	if err := envBool("WEFT_SANDBOX", &c.Sandbox); err != nil {
 		return err
 	}
