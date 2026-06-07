@@ -129,18 +129,24 @@ func run() error {
 	// After this, chroot makes the original filesystem unreachable and the
 	// privilege drop removes root, so nothing further may read root-owned files.
 	if !*dev {
-		if cfg.Sandbox && os.Geteuid() == 0 && cfg.Chroot != "" {
-			if cfg.IsLDAPI() {
-				log.Printf("WARNING: chroot %q is active but the ldapi socket %q is outside it -- LDAP will be unreachable; put the socket inside the chroot or set chroot=\"\"",
-					cfg.Chroot, cfg.LDAPISocketPath())
-			} else if cfg.LDAPHostIsName() {
+		// A chroot can't reach an ldapi Unix socket (it lives outside the
+		// chroot), so skip the chroot in that case -- privilege drop and
+		// pledge/unveil (which unveils the socket) still apply.
+		sbChroot := cfg.Chroot
+		if cfg.Sandbox && os.Geteuid() == 0 && sbChroot != "" {
+			switch {
+			case cfg.IsLDAPI():
+				log.Printf("sandbox: ldapi socket %q is outside the chroot; skipping chroot so LDAP stays reachable (privilege drop + pledge/unveil still apply). Set chroot=\"\" to silence.",
+					cfg.LDAPISocketPath())
+				sbChroot = ""
+			case cfg.LDAPHostIsName():
 				log.Printf("WARNING: chroot %q is active and ldap_url uses a hostname -- DNS config is not inside the chroot; use an IP address or set chroot=\"\"",
-					cfg.Chroot)
+					sbChroot)
 			}
 		}
 		if err := sandbox.Apply(sandbox.Config{
 			Enabled:    cfg.Sandbox,
-			Chroot:     cfg.Chroot,
+			Chroot:     sbChroot,
 			User:       cfg.User,
 			Group:      cfg.Group,
 			LDAPI:      cfg.IsLDAPI(),

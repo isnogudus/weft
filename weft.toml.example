@@ -65,8 +65,9 @@ admin_uid = "admin"
 #
 # NOTE: a chroot to /var/empty removes access to DNS and to Unix sockets. For a
 # chrooted setup, use ldaps://<IP-address> (not a hostname) with a ca_cert_file.
-# If you connect via ldapi:// or a hostname, set chroot = "" (privileges are
-# still dropped and pledge/unveil still apply).
+# With an ldapi:// url weft skips the chroot automatically (the socket is outside
+# it); privilege drop and pledge/unveil still apply. With a hostname, use an IP
+# address or set chroot = "".
 
 # --- HTTP server ---
 listen_addr = "127.0.0.1:8080"   # put relayd/httpd in front for TLS

@@ -22,6 +22,16 @@ import (
 // still reachable). If not started as root, the chroot/drop is skipped.
 func chrootAndDrop(c Config) (chrooted bool, err error) {
 	root := os.Geteuid() == 0
+	drop := root && c.User != ""
+
+	// Resolve the target uid/gid BEFORE chroot: user.Lookup reads /etc/passwd,
+	// which is not present inside the chroot (e.g. /var/empty).
+	var uid, gid int
+	if drop {
+		if uid, gid, err = lookupIDs(c.User, c.Group); err != nil {
+			return false, err
+		}
+	}
 
 	if root && c.Chroot != "" {
 		if err := syscall.Chroot(c.Chroot); err != nil {
@@ -34,11 +44,7 @@ func chrootAndDrop(c Config) (chrooted bool, err error) {
 	}
 
 	switch {
-	case root && c.User != "":
-		uid, gid, err := lookupIDs(c.User, c.Group)
-		if err != nil {
-			return chrooted, err
-		}
+	case drop:
 		// Order matters: drop supplementary groups and the gid before the uid,
 		// since after setuid we no longer have the privilege to do so.
 		if err := syscall.Setgroups([]int{gid}); err != nil {

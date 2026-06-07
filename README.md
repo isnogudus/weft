@@ -212,10 +212,10 @@ see [`contrib/weft.rc`](contrib/weft.rc)). Everything is controlled by the
 no-op.
 
 Caveat: a chroot to `/var/empty` cannot reach DNS config or Unix sockets. For a
-chrooted deployment use `ldaps://<IP>` with a `ca_cert_file`. If you connect via
-`ldapi://` or a hostname, set `chroot = ""` — privileges are still dropped and
-`pledge`/`unveil` still apply (weft warns at startup about an incompatible
-combination).
+chrooted deployment use `ldaps://<IP>` with a `ca_cert_file`. With an `ldapi://`
+url weft **skips the chroot automatically** (the socket lives outside it) while
+still dropping privileges and applying `pledge`/`unveil`. With a hostname, use an
+IP address or set `chroot = ""`.
 
 ## Deploy on OpenBSD
 
