@@ -180,7 +180,13 @@ func runMonitor(cfg config.Config) error {
 		os.Getpid(), cfg.Chroot, cfg.User)
 
 	return privsep.RunMonitor(tcpLn, dial, func() error {
-		return sandbox.ConfineMonitor(sandbox.Config{Enabled: cfg.Sandbox})
+		return sandbox.ConfineMonitor(sandbox.Config{
+			Enabled:    cfg.Sandbox,
+			LDAPI:      cfg.IsLDAPI(),
+			SocketPath: cfg.LDAPISocketPath(),
+			NeedsDNS:   cfg.LDAPHostIsName(),
+			Syslog:     cfg.Log == "syslog",
+		})
 	}, logLine)
 }
 

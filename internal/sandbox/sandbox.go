@@ -19,4 +19,5 @@ type Config struct {
 	SocketPath string // the ldapi socket path (when LDAPI)
 	CACertFile string // CA bundle path, if configured
 	NeedsDNS   bool   // the LDAP host is a name that must be resolved at runtime
+	Syslog     bool   // logging to syslog (the monitor needs /dev/log)
 }
