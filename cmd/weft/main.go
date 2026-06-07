@@ -241,12 +241,18 @@ func wrapTLS(cfg config.Config, ln net.Listener) (net.Listener, error) {
 	}), nil
 }
 
-// warmRuntime triggers lazy, filesystem-backed initialisation before the
-// sandbox locks the filesystem: the net/http MIME type table (which reads
-// /etc/mime.types on first use) and the CSPRNG. Otherwise serving a .js/.css
-// asset or minting a session id could try to open a file inside the chroot.
+// warmRuntime triggers every lazy, filesystem-backed initialisation before the
+// sandbox locks the filesystem, so the worker can run under a tight pledge that
+// promises no rpath:
+//   - the net/http MIME table reads /etc/mime.types on the first .js/.css lookup
+//   - the time package reads /etc/localtime on the first local-time format (logs)
+//   - the CSPRNG (harmless on OpenBSD, which uses getentropy, but cheap insurance)
+//
+// If a syscall still trips pledge after this, the fix is to warm whatever opened
+// a file here -- not to widen the promise.
 func warmRuntime() {
 	_ = mime.TypeByExtension(".html")
+	_ = time.Now().Local().Format(time.RFC3339)
 	var b [1]byte
 	_, _ = rand.Read(b[:])
 }
