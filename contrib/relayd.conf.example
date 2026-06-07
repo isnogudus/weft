@@ -1,0 +1,26 @@
+# Example relayd(8) TLS termination in front of weft (which listens on
+# 127.0.0.1:8080). relayd handles the public TLS; weft speaks plain HTTP on
+# localhost only.
+#
+# Put the certificate at /etc/ssl/weft.example.org.crt and the key at
+# /etc/ssl/private/weft.example.org.key.
+
+table <weft> { 127.0.0.1 }
+
+http protocol "wefttls" {
+	tls keypair "weft.example.org"
+
+	# Forward the real client IP so weft's login rate limit keys on it.
+	match request header set "X-Forwarded-For" value "$REMOTE_ADDR"
+
+	# Security headers (weft also sets some itself).
+	match response header set "Strict-Transport-Security" value "max-age=31536000"
+
+	pass
+}
+
+relay "weft_https" {
+	listen on egress port 443 tls
+	protocol "wefttls"
+	forward to <weft> port 8080
+}

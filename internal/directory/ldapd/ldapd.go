@@ -1,0 +1,671 @@
+// Package ldapd implements directory.Directory against OpenBSD ldapd(8).
+//
+// It isolates the ldapd-specific behaviour observed during verification:
+//   - ldapd has no ModifyDN: RenameUID is add-new -> fixup memberUid -> delete-old.
+//   - ldapd enforces loaded schema, so add/modify carry the full objectClass
+//     chain and all MUST attributes.
+//   - userPassword is written pre-hashed as "{CRYPT}$2b$..."; ldapd verifies it
+//     on bind. weft never reads it back for verification.
+//
+// Authorization is delegated to ldapd: each Conn is bound as the logged-in
+// identity (admin = rootdn, otherwise the user's own DN). ldapd's ACLs decide
+// what the bound identity may write; this package surfaces a denial as
+// directory.ErrPermission.
+package ldapd
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/go-ldap/ldap/v3"
+
+	"weft/internal/config"
+	"weft/internal/directory"
+	"weft/internal/idalloc"
+)
+
+// objectClass chains for the entries weft manages.
+var (
+	userClasses  = []string{"top", "person", "organizationalPerson", "inetOrgPerson"}
+	posixClass   = "posixAccount"
+	groupClasses = []string{"top", "posixGroup"}
+)
+
+// Directory dials and binds against ldapd.
+type Directory struct {
+	cfg config.Config
+}
+
+// New returns a Directory for the given configuration.
+func New(cfg config.Config) *Directory { return &Directory{cfg: cfg} }
+
+// --- dialing / TLS ---
+
+func (d *Directory) tlsConfig() (*tls.Config, error) {
+	u, err := url.Parse(d.cfg.LDAPURL)
+	if err != nil {
+		return nil, fmt.Errorf("ldapd: parse url: %w", err)
+	}
+	t := &tls.Config{
+		ServerName:         u.Hostname(),
+		InsecureSkipVerify: d.cfg.InsecureSkipVerify, //nolint:gosec // opt-in via config/-insecure; warned at startup
+		MinVersion:         tls.VersionTLS12,
+	}
+	if d.cfg.CACertFile != "" {
+		pem, err := os.ReadFile(d.cfg.CACertFile)
+		if err != nil {
+			return nil, fmt.Errorf("ldapd: read ca cert: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("ldapd: no certs found in %s", d.cfg.CACertFile)
+		}
+		t.RootCAs = pool
+	}
+	return t, nil
+}
+
+func (d *Directory) dial() (*ldap.Conn, error) {
+	switch d.cfg.TLSMode {
+	case config.TLSLDAPS:
+		t, err := d.tlsConfig()
+		if err != nil {
+			return nil, err
+		}
+		return ldap.DialURL(d.cfg.LDAPURL, ldap.DialWithTLSConfig(t))
+	case config.TLSStartTLS:
+		c, err := ldap.DialURL(d.cfg.LDAPURL)
+		if err != nil {
+			return nil, err
+		}
+		t, err := d.tlsConfig()
+		if err != nil {
+			c.Close()
+			return nil, err
+		}
+		if err := c.StartTLS(t); err != nil {
+			c.Close()
+			return nil, fmt.Errorf("ldapd: starttls: %w", err)
+		}
+		return c, nil
+	case config.TLSPlain:
+		return ldap.DialURL(d.cfg.LDAPURL)
+	default:
+		return nil, fmt.Errorf("ldapd: unknown tls mode %q", d.cfg.TLSMode)
+	}
+}
+
+func (d *Directory) bind(dn, password string, admin bool) (directory.Conn, error) {
+	c, err := d.dial()
+	if err != nil {
+		return nil, fmt.Errorf("ldapd: dial: %w", err)
+	}
+	if err := c.Bind(dn, password); err != nil {
+		c.Close()
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
+			return nil, directory.ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("ldapd: bind: %w", err)
+	}
+	return &conn{d: d, lc: c, dn: dn, admin: admin}, nil
+}
+
+// BindUser binds as uid=<uid>,ou=people,<base>.
+func (d *Directory) BindUser(_ context.Context, uid, password string) (directory.Conn, error) {
+	return d.bind(d.cfg.UserDN(uid), password, false)
+}
+
+// BindAdmin binds as the configured admin DN (ldapd rootdn).
+func (d *Directory) BindAdmin(_ context.Context, password string) (directory.Conn, error) {
+	return d.bind(d.cfg.AdminBindDN(), password, true)
+}
+
+// Provisioned checks (anonymously) whether ou=people exists under the base.
+func (d *Directory) Provisioned(_ context.Context) (bool, error) {
+	c, err := d.dial()
+	if err != nil {
+		return false, fmt.Errorf("ldapd: dial: %w", err)
+	}
+	defer c.Close()
+	req := ldap.NewSearchRequest(
+		d.cfg.PeopleDN(), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
+		"(objectClass=organizationalUnit)", []string{"ou"}, nil)
+	res, err := c.Search(req)
+	if err != nil {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+			return false, nil
+		}
+		return false, fmt.Errorf("ldapd: provisioned check: %w", err)
+	}
+	return len(res.Entries) > 0, nil
+}
+
+// --- conn ---
+
+type conn struct {
+	d     *Directory
+	lc    *ldap.Conn
+	dn    string
+	admin bool
+}
+
+func (c *conn) WhoAmI() string { return c.dn }
+func (c *conn) IsAdmin() bool  { return c.admin }
+func (c *conn) Close() error   { return c.lc.Close() }
+
+// mapErr translates ldap result codes into directory sentinel errors.
+func mapErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject):
+		return directory.ErrNotFound
+	case ldap.IsErrorWithCode(err, ldap.LDAPResultEntryAlreadyExists):
+		return directory.ErrAlreadyExists
+	case ldap.IsErrorWithCode(err, ldap.LDAPResultInsufficientAccessRights):
+		return directory.ErrPermission
+	default:
+		return err
+	}
+}
+
+// --- users ---
+
+var userAttrs = []string{
+	"objectClass", "uid", "cn", "sn", "givenName", "displayName",
+	"uidNumber", "gidNumber", "homeDirectory", "loginShell", "gecos",
+}
+
+func (c *conn) userSearchAttrs() []string {
+	a := append([]string(nil), userAttrs...)
+	a = append(a, c.d.cfg.MailAttr)
+	if c.d.cfg.MailAliasAttr != "" {
+		a = append(a, c.d.cfg.MailAliasAttr)
+	}
+	return a
+}
+
+func (c *conn) ListUsers(_ context.Context, term string) ([]directory.User, error) {
+	filter := "(objectClass=inetOrgPerson)"
+	if term != "" {
+		t := ldap.EscapeFilter(term)
+		filter = fmt.Sprintf("(&(objectClass=inetOrgPerson)(|(uid=*%s*)(cn=*%s*)(displayName=*%s*)))", t, t, t)
+	}
+	req := ldap.NewSearchRequest(
+		c.d.cfg.PeopleDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
+		filter, c.userSearchAttrs(), nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]directory.User, 0, len(res.Entries))
+	for _, e := range res.Entries {
+		out = append(out, *c.parseUser(e))
+	}
+	return out, nil
+}
+
+func (c *conn) GetUser(_ context.Context, uid string) (*directory.User, error) {
+	req := ldap.NewSearchRequest(
+		c.d.cfg.UserDN(uid), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
+		"(objectClass=inetOrgPerson)", c.userSearchAttrs(), nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	if len(res.Entries) == 0 {
+		return nil, directory.ErrNotFound
+	}
+	return c.parseUser(res.Entries[0]), nil
+}
+
+func (c *conn) parseUser(e *ldap.Entry) *directory.User {
+	u := &directory.User{
+		UID:         e.GetAttributeValue("uid"),
+		CN:          e.GetAttributeValue("cn"),
+		SN:          e.GetAttributeValue("sn"),
+		GivenName:   e.GetAttributeValue("givenName"),
+		DisplayName: e.GetAttributeValue("displayName"),
+	}
+	if hasValue(e.GetAttributeValues("objectClass"), posixClass) {
+		u.POSIX = &directory.POSIXProfile{
+			UIDNumber:     atoi(e.GetAttributeValue("uidNumber")),
+			GIDNumber:     atoi(e.GetAttributeValue("gidNumber")),
+			HomeDirectory: e.GetAttributeValue("homeDirectory"),
+			LoginShell:    e.GetAttributeValue("loginShell"),
+			Gecos:         e.GetAttributeValue("gecos"),
+		}
+	}
+	if m := c.parseMail(e); m != nil {
+		u.Mail = m
+	}
+	return u
+}
+
+func (c *conn) parseMail(e *ldap.Entry) *directory.MailProfile {
+	primary := e.GetAttributeValues(c.d.cfg.MailAttr)
+	if c.d.cfg.MailAliasAttr == "" {
+		if len(primary) == 0 {
+			return nil
+		}
+		return &directory.MailProfile{Mail: primary[0], Aliases: primary[1:]}
+	}
+	aliases := e.GetAttributeValues(c.d.cfg.MailAliasAttr)
+	if len(primary) == 0 && len(aliases) == 0 {
+		return nil
+	}
+	m := &directory.MailProfile{Aliases: aliases}
+	if len(primary) > 0 {
+		m.Mail = primary[0]
+	}
+	return m
+}
+
+func (c *conn) CreateUser(_ context.Context, u directory.User, hashedPassword string) error {
+	req := ldap.NewAddRequest(c.d.cfg.UserDN(u.UID), nil)
+	classes := append([]string(nil), userClasses...)
+	if u.POSIX != nil {
+		classes = append(classes, posixClass)
+	}
+	req.Attribute("objectClass", classes)
+	req.Attribute("uid", []string{u.UID})
+	req.Attribute("cn", []string{u.CN})
+	req.Attribute("sn", []string{u.SN})
+	addIf(req, "givenName", u.GivenName)
+	addIf(req, "displayName", u.DisplayName)
+	req.Attribute("userPassword", []string{hashedPassword})
+	if u.POSIX != nil {
+		req.Attribute("uidNumber", []string{itoa(u.POSIX.UIDNumber)})
+		req.Attribute("gidNumber", []string{itoa(u.POSIX.GIDNumber)})
+		req.Attribute("homeDirectory", []string{u.POSIX.HomeDirectory})
+		addIf(req, "loginShell", u.POSIX.LoginShell)
+		addIf(req, "gecos", u.POSIX.Gecos)
+	}
+	c.addMail(req, u.Mail)
+	return mapErr(c.lc.Add(req))
+}
+
+// addMail appends mail attributes to an AddRequest.
+func (c *conn) addMail(req *ldap.AddRequest, m *directory.MailProfile) {
+	if m == nil {
+		return
+	}
+	if c.d.cfg.MailAliasAttr == "" {
+		vals := append([]string{}, m.Mail)
+		vals = append(vals, m.Aliases...)
+		vals = nonEmpty(vals)
+		if len(vals) > 0 {
+			req.Attribute(c.d.cfg.MailAttr, vals)
+		}
+		return
+	}
+	if m.Mail != "" {
+		req.Attribute(c.d.cfg.MailAttr, []string{m.Mail})
+	}
+	if len(m.Aliases) > 0 {
+		req.Attribute(c.d.cfg.MailAliasAttr, m.Aliases)
+	}
+}
+
+func (c *conn) UpdateUser(ctx context.Context, u directory.User) error {
+	cur, err := c.GetUser(ctx, u.UID)
+	if err != nil {
+		return err
+	}
+	m := ldap.NewModifyRequest(c.d.cfg.UserDN(u.UID), nil)
+	m.Replace("cn", []string{u.CN})
+	m.Replace("sn", []string{u.SN})
+	m.Replace("givenName", nonEmpty([]string{u.GivenName}))
+	m.Replace("displayName", nonEmpty([]string{u.DisplayName}))
+
+	// POSIX profile toggle.
+	switch {
+	case u.POSIX != nil && cur.POSIX != nil:
+		m.Replace("uidNumber", []string{itoa(u.POSIX.UIDNumber)})
+		m.Replace("gidNumber", []string{itoa(u.POSIX.GIDNumber)})
+		m.Replace("homeDirectory", []string{u.POSIX.HomeDirectory})
+		m.Replace("loginShell", nonEmpty([]string{u.POSIX.LoginShell}))
+		m.Replace("gecos", nonEmpty([]string{u.POSIX.Gecos}))
+	case u.POSIX != nil && cur.POSIX == nil:
+		m.Add("objectClass", []string{posixClass})
+		m.Add("uidNumber", []string{itoa(u.POSIX.UIDNumber)})
+		m.Add("gidNumber", []string{itoa(u.POSIX.GIDNumber)})
+		m.Add("homeDirectory", []string{u.POSIX.HomeDirectory})
+		addIfMod(m, "loginShell", u.POSIX.LoginShell)
+		addIfMod(m, "gecos", u.POSIX.Gecos)
+	case u.POSIX == nil && cur.POSIX != nil:
+		m.Replace("uidNumber", nil)
+		m.Replace("gidNumber", nil)
+		m.Replace("homeDirectory", nil)
+		m.Replace("loginShell", nil)
+		m.Replace("gecos", nil)
+		m.Delete("objectClass", []string{posixClass})
+	}
+
+	// Mail profile (no objectClass needed for the default "mail" attribute).
+	c.modifyMail(m, u.Mail)
+
+	return mapErr(c.lc.Modify(m))
+}
+
+func (c *conn) modifyMail(m *ldap.ModifyRequest, mail *directory.MailProfile) {
+	if c.d.cfg.MailAliasAttr == "" {
+		var vals []string
+		if mail != nil {
+			vals = nonEmpty(append([]string{mail.Mail}, mail.Aliases...))
+		}
+		m.Replace(c.d.cfg.MailAttr, vals)
+		return
+	}
+	var primary, aliases []string
+	if mail != nil {
+		primary = nonEmpty([]string{mail.Mail})
+		aliases = mail.Aliases
+	}
+	m.Replace(c.d.cfg.MailAttr, primary)
+	m.Replace(c.d.cfg.MailAliasAttr, aliases)
+}
+
+func (c *conn) SetPassword(_ context.Context, uid, hashedPassword string) error {
+	m := ldap.NewModifyRequest(c.d.cfg.UserDN(uid), nil)
+	m.Replace("userPassword", []string{hashedPassword})
+	return mapErr(c.lc.Modify(m))
+}
+
+func (c *conn) DeleteUser(ctx context.Context, uid string) error {
+	if err := mapErr(c.lc.Del(ldap.NewDelRequest(c.d.cfg.UserDN(uid), nil))); err != nil {
+		return err
+	}
+	return c.removeFromAllGroups(ctx, uid)
+}
+
+func (c *conn) RenameUID(ctx context.Context, oldUID, newUID string) error {
+	// ldapd has no ModifyDN -> add-new, fixup memberUid, delete-old.
+	src := ldap.NewSearchRequest(
+		c.d.cfg.UserDN(oldUID), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
+		"(objectClass=inetOrgPerson)", append(c.userSearchAttrs(), "userPassword"), nil)
+	res, err := c.lc.Search(src)
+	if err != nil {
+		return mapErr(err)
+	}
+	if len(res.Entries) == 0 {
+		return directory.ErrNotFound
+	}
+	e := res.Entries[0]
+
+	add := ldap.NewAddRequest(c.d.cfg.UserDN(newUID), nil)
+	for _, a := range e.Attributes {
+		vals := a.Values
+		if strings.EqualFold(a.Name, "uid") {
+			vals = []string{newUID}
+		}
+		add.Attribute(a.Name, vals)
+	}
+	if err := mapErr(c.lc.Add(add)); err != nil {
+		return err
+	}
+
+	// Migrate supplementary memberships, then drop the old entry.
+	groups, err := c.groupsWithMember(oldUID)
+	if err != nil {
+		return err
+	}
+	for _, g := range groups {
+		_ = c.AddMember(ctx, g, newUID)
+		_ = c.RemoveMember(ctx, g, oldUID)
+	}
+	return mapErr(c.lc.Del(ldap.NewDelRequest(c.d.cfg.UserDN(oldUID), nil)))
+}
+
+func (c *conn) CreateBaseDN(_ context.Context) error {
+	dn := c.d.cfg.BaseDN
+	parsed, err := ldap.ParseDN(dn)
+	if err != nil || len(parsed.RDNs) == 0 || len(parsed.RDNs[0].Attributes) == 0 {
+		return fmt.Errorf("ldapd: cannot parse base_dn %q", dn)
+	}
+	rdn := parsed.RDNs[0].Attributes[0]
+	attr, val := strings.ToLower(rdn.Type), rdn.Value
+
+	req := ldap.NewAddRequest(dn, nil)
+	switch attr {
+	case "dc":
+		req.Attribute("objectClass", []string{"top", "dcObject", "organization"})
+		req.Attribute("dc", []string{val})
+		req.Attribute("o", []string{val})
+	case "o":
+		req.Attribute("objectClass", []string{"top", "organization"})
+		req.Attribute("o", []string{val})
+	case "ou":
+		req.Attribute("objectClass", []string{"top", "organizationalUnit"})
+		req.Attribute("ou", []string{val})
+	default:
+		return fmt.Errorf("ldapd: cannot auto-create base entry %q (unsupported RDN type %q) -- create it manually", dn, attr)
+	}
+	return mapErr(c.lc.Add(req))
+}
+
+func (c *conn) CreateOU(_ context.Context, name string) error {
+	dn := "ou=" + name + "," + c.d.cfg.BaseDN
+	req := ldap.NewAddRequest(dn, nil)
+	req.Attribute("objectClass", []string{"top", "organizationalUnit"})
+	req.Attribute("ou", []string{name})
+	return mapErr(c.lc.Add(req))
+}
+
+// --- groups ---
+
+func (c *conn) ListGroups(_ context.Context) ([]directory.Group, error) {
+	req := ldap.NewSearchRequest(
+		c.d.cfg.GroupsDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
+		"(objectClass=posixGroup)", []string{"cn", "gidNumber", "memberUid"}, nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]directory.Group, 0, len(res.Entries))
+	for _, e := range res.Entries {
+		out = append(out, *parseGroup(e))
+	}
+	return out, nil
+}
+
+func (c *conn) GetGroup(_ context.Context, cn string) (*directory.Group, error) {
+	req := ldap.NewSearchRequest(
+		c.d.cfg.GroupDN(cn), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
+		"(objectClass=posixGroup)", []string{"cn", "gidNumber", "memberUid"}, nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	if len(res.Entries) == 0 {
+		return nil, directory.ErrNotFound
+	}
+	return parseGroup(res.Entries[0]), nil
+}
+
+func parseGroup(e *ldap.Entry) *directory.Group {
+	return &directory.Group{
+		CN:        e.GetAttributeValue("cn"),
+		GIDNumber: atoi(e.GetAttributeValue("gidNumber")),
+		MemberUID: e.GetAttributeValues("memberUid"),
+	}
+}
+
+func (c *conn) CreateGroup(_ context.Context, g directory.Group) error {
+	req := ldap.NewAddRequest(c.d.cfg.GroupDN(g.CN), nil)
+	req.Attribute("objectClass", groupClasses)
+	req.Attribute("cn", []string{g.CN})
+	req.Attribute("gidNumber", []string{itoa(g.GIDNumber)})
+	if len(g.MemberUID) > 0 {
+		req.Attribute("memberUid", g.MemberUID)
+	}
+	return mapErr(c.lc.Add(req))
+}
+
+func (c *conn) DeleteGroup(_ context.Context, cn string) error {
+	return mapErr(c.lc.Del(ldap.NewDelRequest(c.d.cfg.GroupDN(cn), nil)))
+}
+
+func (c *conn) AddMember(_ context.Context, cn, uid string) error {
+	m := ldap.NewModifyRequest(c.d.cfg.GroupDN(cn), nil)
+	m.Add("memberUid", []string{uid})
+	err := c.lc.Modify(m)
+	if ldap.IsErrorWithCode(err, ldap.LDAPResultAttributeOrValueExists) {
+		return nil // already a member
+	}
+	return mapErr(err)
+}
+
+func (c *conn) RemoveMember(_ context.Context, cn, uid string) error {
+	m := ldap.NewModifyRequest(c.d.cfg.GroupDN(cn), nil)
+	m.Delete("memberUid", []string{uid})
+	err := c.lc.Modify(m)
+	if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchAttribute) {
+		return nil // not a member
+	}
+	return mapErr(err)
+}
+
+func (c *conn) EffectiveGroups(ctx context.Context, uid string) ([]directory.Group, error) {
+	u, err := c.GetUser(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("(&(objectClass=posixGroup)(memberUid=%s))", ldap.EscapeFilter(uid))
+	if u.POSIX != nil {
+		filter = fmt.Sprintf("(&(objectClass=posixGroup)(|(memberUid=%s)(gidNumber=%d)))",
+			ldap.EscapeFilter(uid), u.POSIX.GIDNumber)
+	}
+	req := ldap.NewSearchRequest(
+		c.d.cfg.GroupsDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
+		filter, []string{"cn", "gidNumber", "memberUid"}, nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]directory.Group, 0, len(res.Entries))
+	for _, e := range res.Entries {
+		out = append(out, *parseGroup(e))
+	}
+	return out, nil
+}
+
+// groupsWithMember returns the cns of groups listing uid in memberUid.
+func (c *conn) groupsWithMember(uid string) ([]string, error) {
+	req := ldap.NewSearchRequest(
+		c.d.cfg.GroupsDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
+		fmt.Sprintf("(&(objectClass=posixGroup)(memberUid=%s))", ldap.EscapeFilter(uid)),
+		[]string{"cn"}, nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	var cns []string
+	for _, e := range res.Entries {
+		cns = append(cns, e.GetAttributeValue("cn"))
+	}
+	return cns, nil
+}
+
+func (c *conn) removeFromAllGroups(ctx context.Context, uid string) error {
+	cns, err := c.groupsWithMember(uid)
+	if err != nil {
+		return err
+	}
+	for _, cn := range cns {
+		if err := c.RemoveMember(ctx, cn, uid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// --- id allocation ---
+
+func (c *conn) AllocateUIDNumber(_ context.Context) (int, error) {
+	used, err := c.collectNumbers(c.d.cfg.PeopleDN(), "(objectClass=posixAccount)", "uidNumber")
+	if err != nil {
+		return 0, err
+	}
+	return allocOrErr(c.d.cfg.UIDRange(), used)
+}
+
+func (c *conn) AllocateGIDNumber(_ context.Context) (int, error) {
+	used, err := c.collectNumbers(c.d.cfg.GroupsDN(), "(objectClass=posixGroup)", "gidNumber")
+	if err != nil {
+		return 0, err
+	}
+	// Also avoid clashing with user primary gids.
+	userGids, err := c.collectNumbers(c.d.cfg.PeopleDN(), "(objectClass=posixAccount)", "gidNumber")
+	if err != nil {
+		return 0, err
+	}
+	return allocOrErr(c.d.cfg.GIDRange(), append(used, userGids...))
+}
+
+func (c *conn) collectNumbers(base, filter, attr string) ([]int, error) {
+	req := ldap.NewSearchRequest(
+		base, ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
+		filter, []string{attr}, nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	var nums []int
+	for _, e := range res.Entries {
+		if v := e.GetAttributeValue(attr); v != "" {
+			nums = append(nums, atoi(v))
+		}
+	}
+	return nums, nil
+}
+
+func allocOrErr(r idalloc.Range, used []int) (int, error) {
+	n, err := idalloc.NextFree(r, used)
+	if err != nil {
+		return 0, directory.ErrRangeExhausted
+	}
+	return n, nil
+}
+
+// --- small helpers ---
+
+func atoi(s string) int { n, _ := strconv.Atoi(strings.TrimSpace(s)); return n }
+func itoa(n int) string { return strconv.Itoa(n) }
+
+func hasValue(vals []string, want string) bool {
+	for _, v := range vals {
+		if strings.EqualFold(v, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmpty(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func addIf(req *ldap.AddRequest, attr, val string) {
+	if val != "" {
+		req.Attribute(attr, []string{val})
+	}
+}
+
+func addIfMod(m *ldap.ModifyRequest, attr, val string) {
+	if val != "" {
+		m.Add(attr, []string{val})
+	}
+}

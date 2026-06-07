@@ -1,0 +1,20 @@
+#!/bin/ksh
+#
+# OpenBSD rc.d script for weft. Install as /etc/rc.d/weft, then:
+#   rcctl enable weft
+#   rcctl start weft
+#
+# Runs as the dedicated _weft user. Create it once with:
+#   useradd -d /var/empty -s /sbin/nologin -L daemon _weft
+# Place the binary at /usr/local/bin/weft and config at /etc/weft.toml
+# (readable only by _weft, since it may reference key files).
+
+daemon="/usr/local/bin/weft"
+daemon_flags="-config /etc/weft.toml"
+daemon_user="_weft"
+
+. /etc/rc.d/rc.subr
+
+rc_bg=YES
+
+rc_cmd $1

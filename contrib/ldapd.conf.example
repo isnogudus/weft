@@ -1,0 +1,50 @@
+# Example /etc/ldapd.conf for use with weft.
+#
+# Key points (verified against the ldapd source):
+#   * ldapd enforces loaded schema, so the schema includes below are required.
+#   * ldapd has NO group-based ACLs. ACL subjects can only be "by any",
+#     "by self" or "by <single dn>". weft therefore treats the rootdn as the
+#     single admin and limits regular users to changing their own password.
+#   * The rootdn bypasses ACLs entirely, so it can create/modify everything.
+#     Set it to the uid form weft expects.
+#   * ldapd recognises {CRYPT} (bcrypt on OpenBSD) for userPassword on bind,
+#     which is exactly what weft writes.
+
+schema "/etc/ldap/core.schema"
+schema "/etc/ldap/inetorgperson.schema"
+schema "/etc/ldap/nis.schema"
+
+listen on lo0
+listen on lo0 tls          # if you want weft -> ldapd over TLS on localhost
+
+# The namespace suffix MUST equal weft's base_dn. The directory may start
+# completely empty: weft's setup wizard creates the base entry itself, then
+# ou=people, ou=groups and the default group.
+namespace "dc=example,dc=org" {
+	rootdn "uid=admin,ou=people,dc=example,dc=org"
+	# Generate with:  print -n 'your-admin-password' | encrypt
+	rootpw "$2b$10$REPLACE_WITH_A_BCRYPT_HASH................................"
+
+	index uid
+	index cn
+	index gidNumber
+	index memberUid
+
+	# 1) Never expose password hashes on reads (matched first -> wins).
+	deny  read  access to subtree any attribute userPassword
+
+	# 2) Allow read of everything else. ldapd has no "by authenticated"
+	#    subject, so this is "by any" (anonymous included). That is acceptable
+	#    for an internal directory and is what lets users view their own data
+	#    and group memberships through weft. Tighten to "by self" if you do not
+	#    need user self-service reads.
+	allow read  access to subtree any
+
+	# 3) Let users authenticate.
+	allow bind  access to subtree any
+
+	# 4) A user may change ONLY their own password. Restricting to the
+	#    userPassword attribute prevents a user from raising their own
+	#    uidNumber/gidNumber. The rootdn (admin) edits everything else.
+	allow write access to subtree "ou=people,dc=example,dc=org" attribute userPassword by self
+}

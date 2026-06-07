@@ -1,0 +1,54 @@
+# weft configuration. Copy to weft.toml and adjust. Every value except
+# ldap_url and base_dn has a sensible default; the minimal config is just those
+# two plus a TLS mode.
+
+# --- Core (required) ---
+ldap_url = "ldaps://ldap.example.org:636"
+base_dn  = "dc=example,dc=org"
+
+# --- Transport security to the LDAP server ---
+# ldaps   : implicit TLS (recommended; use with an ldaps:// url)
+# starttls: ldap:// then StartTLS
+# plain   : NO TLS -- requires allow_plain_bind=true, dev only
+tls_mode = "ldaps"
+# ca_cert_file = "/etc/ssl/ldap-ca.pem"   # preferred for a privately-signed server cert
+# insecure_skip_verify = false            # skip cert verification (self-signed); logs a warning.
+#                                         # Also available as the -insecure flag. Prefer ca_cert_file.
+# allow_plain_bind     = false            # dev only
+
+# --- Admin identity ---
+# You log in by typing admin_uid as the username; the session then binds as the
+# admin DN, which MUST equal ldapd's rootdn. weft prints the resolved DN at
+# startup and shows it in the setup wizard.
+admin_uid = "admin"
+# admin_dn: the bind DN. Leave unset to derive uid=<admin_uid>,ou=people,<base>.
+# Set it when your rootdn has a different shape, e.g.:
+# admin_dn = "cn=admin,dc=example,dc=org"
+
+# --- Directory layout (defaults shown) ---
+# people_ou      = "people"
+# groups_ou      = "groups"
+# primary_group  = "users"      # shared default primary group
+
+# --- POSIX defaults ---
+# uid_min = 10000
+# uid_max = 59999
+# gid_min = 10000
+# gid_max = 59999
+# home_template = "/home/{uid}"
+# default_shell = "/bin/ksh"
+
+# --- Mail attribute mapping ---
+# mail_attr       = "mail"      # primary address attribute
+# mail_alias_attr = ""          # empty -> aliases stored as extra "mail" values
+
+# --- Password hashing (bcrypt -> {CRYPT}) ---
+# bcrypt_cost         = 12
+# max_password_length = 72       # bcrypt truncates beyond 72 bytes
+
+# --- HTTP server ---
+listen_addr = "127.0.0.1:8080"   # put relayd/httpd in front for TLS
+# tls_cert_file = "/etc/ssl/weft.crt"   # optional standalone TLS instead of a proxy
+# tls_key_file  = "/etc/ssl/private/weft.key"
+# session_timeout = "30m"
+cookie_secure = true             # set false ONLY for local plain-http dev

@@ -1,0 +1,17 @@
+# Build artifacts
+/weft
+/dist/
+/bin/
+
+# Frontend deps. web/dist is kept (a placeholder index.html is committed so the
+# embed builds); `make web` overwrites it with the real Vite output.
+/web/node_modules/
+/web/dist/assets/
+
+# Local config / secrets
+/weft.toml
+*.local.toml
+
+# Editor / OS / tooling
+.DS_Store
+.claude/

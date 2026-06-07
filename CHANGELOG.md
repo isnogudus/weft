@@ -1,0 +1,36 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/), and the project follows
+[Semantic Versioning](https://semver.org/).
+
+## [0.1.0] - 2026-06-07
+
+First public release.
+
+### Added
+- Single static binary: Go backend serving an embedded Svelte 5 SPA, with a
+  JSON API. Cross-compiles to `openbsd/amd64`.
+- Passthrough-bind authentication against an external LDAP server (target:
+  OpenBSD `ldapd`). No service account; sessions re-bind as the logged-in user.
+- Admin = the ldapd `rootdn`. Configurable admin bind DN (`admin_uid` /
+  `admin_dn`), logged at startup and shown in the setup wizard.
+- Opinionated directory layout: `ou=people` (RDN `uid`), `ou=groups`
+  (posixGroup only), a shared default primary group.
+- Users with optional POSIX and Mail profiles; collision-safe uid/gid
+  auto-allocation with admin override; bcrypt `{CRYPT}` passwords.
+- Groups: create/delete, member management, effective-group view (primary via
+  gidNumber + supplementary via memberUid).
+- uid rename via add → memberUid fix-up → delete (ldapd has no ModifyDN).
+- Setup wizard that provisions the base entry, OUs and default group on an empty
+  directory (idempotent).
+- Self-service: view own profile/groups, change own password.
+- Read-only user detail view (click a row); admin can jump to editing.
+- Bilingual UI (German/English) with a runtime toggle, persisted per browser.
+- Security: server-side sessions, `HttpOnly`/`Secure`/`SameSite=Strict` cookies,
+  CSRF synchronizer token, login rate limit, TLS to the LDAP server, optional
+  `-insecure` for self-signed certs, request logging.
+- Docs and OpenBSD operational examples: `weft.toml`, `ldapd.conf` (schema +
+  ACLs), `rc.d` service, `relayd` TLS termination.
+
+[0.1.0]: https://github.com/USER/weft/releases/tag/v0.1.0
