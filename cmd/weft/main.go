@@ -5,10 +5,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +21,7 @@ import (
 	"weft/internal/directory"
 	"weft/internal/directory/fake"
 	"weft/internal/directory/ldapd"
+	"weft/internal/sandbox"
 	"weft/internal/server"
 	"weft/web"
 )
@@ -68,7 +71,12 @@ func run() error {
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		dir = ldapd.New(cfg)
+		// New reads the CA / captures system roots now, before sandboxing.
+		d, err := ldapd.New(cfg)
+		if err != nil {
+			return err
+		}
+		dir = d
 		if cfg.IsLDAPI() {
 			log.Printf("LDAP server: %s (local unix socket, secured by file permissions; tls_mode/allow_plain_bind ignored), base_dn=%q",
 				cfg.LDAPURL, cfg.BaseDN)
@@ -97,8 +105,50 @@ func run() error {
 	srv := server.New(cfg, dir, assets)
 	defer srv.Close()
 
+	// Open the listening socket BEFORE sandboxing: a privileged port can be
+	// bound while still root, and the TLS keypair is read before the FS is
+	// locked.
+	ln, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
+	}
+	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			return fmt.Errorf("load tls keypair: %w", err)
+		}
+		ln = tls.NewListener(ln, &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		})
+	}
+
+	// Confine the process: every file has been read and the socket is open.
+	if !*dev {
+		if cfg.Sandbox && os.Geteuid() == 0 && cfg.Chroot != "" {
+			if cfg.IsLDAPI() {
+				log.Printf("WARNING: chroot %q is active but the ldapi socket %q is outside it -- LDAP will be unreachable; put the socket inside the chroot or set chroot=\"\"",
+					cfg.Chroot, cfg.LDAPISocketPath())
+			} else if cfg.LDAPHostIsName() {
+				log.Printf("WARNING: chroot %q is active and ldap_url uses a hostname -- DNS config is not inside the chroot; use an IP address or set chroot=\"\"",
+					cfg.Chroot)
+			}
+		}
+		if err := sandbox.Apply(sandbox.Config{
+			Enabled:    cfg.Sandbox,
+			Chroot:     cfg.Chroot,
+			User:       cfg.User,
+			Group:      cfg.Group,
+			LDAPI:      cfg.IsLDAPI(),
+			SocketPath: cfg.LDAPISocketPath(),
+			CACertFile: cfg.CACertFile,
+			NeedsDNS:   cfg.LDAPHostIsName(),
+		}); err != nil {
+			return fmt.Errorf("sandbox: %w", err)
+		}
+	}
+
 	httpSrv := &http.Server{
-		Addr:              cfg.ListenAddr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
@@ -109,11 +159,7 @@ func run() error {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("weft %s listening on %s", version, cfg.ListenAddr)
-		if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
-			errCh <- httpSrv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
-		} else {
-			errCh <- httpSrv.ListenAndServe()
-		}
+		errCh <- httpSrv.Serve(ln)
 	}()
 
 	stop := make(chan os.Signal, 1)

@@ -39,35 +39,59 @@ var (
 
 // Directory dials and binds against ldapd.
 type Directory struct {
-	cfg config.Config
+	cfg    config.Config
+	tlsCfg *tls.Config // built once at New(); nil for ldapi/plain
 }
 
-// New returns a Directory for the given configuration.
-func New(cfg config.Config) *Directory { return &Directory{cfg: cfg} }
+// New returns a Directory for the given configuration. It builds the TLS
+// configuration up front -- reading the CA file or capturing the system trust
+// store now -- so that no certificate file is read after the process is
+// sandboxed (chroot/unveil) at startup.
+func New(cfg config.Config) (*Directory, error) {
+	d := &Directory{cfg: cfg}
+	if !cfg.IsLDAPI() && cfg.TLSMode != config.TLSPlain {
+		t, err := buildTLSConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+		d.tlsCfg = t
+	}
+	return d, nil
+}
 
 // --- dialing / TLS ---
 
-func (d *Directory) tlsConfig() (*tls.Config, error) {
-	u, err := url.Parse(d.cfg.LDAPURL)
+func buildTLSConfig(cfg config.Config) (*tls.Config, error) {
+	u, err := url.Parse(cfg.LDAPURL)
 	if err != nil {
 		return nil, fmt.Errorf("ldapd: parse url: %w", err)
 	}
 	t := &tls.Config{
 		ServerName:         u.Hostname(),
-		InsecureSkipVerify: d.cfg.InsecureSkipVerify, //nolint:gosec // opt-in via config/-insecure; warned at startup
+		InsecureSkipVerify: cfg.InsecureSkipVerify, //nolint:gosec // opt-in via config/-insecure; warned at startup
 		MinVersion:         tls.VersionTLS12,
 	}
-	if d.cfg.CACertFile != "" {
-		pem, err := os.ReadFile(d.cfg.CACertFile)
+	if cfg.InsecureSkipVerify {
+		return t, nil
+	}
+	if cfg.CACertFile != "" {
+		pem, err := os.ReadFile(cfg.CACertFile)
 		if err != nil {
 			return nil, fmt.Errorf("ldapd: read ca cert: %w", err)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("ldapd: no certs found in %s", d.cfg.CACertFile)
+			return nil, fmt.Errorf("ldapd: no certs found in %s", cfg.CACertFile)
 		}
 		t.RootCAs = pool
+		return t, nil
 	}
+	// Capture the system trust store now, before any sandbox locks the FS.
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("ldapd: load system cert pool: %w", err)
+	}
+	t.RootCAs = pool
 	return t, nil
 }
 
@@ -79,22 +103,13 @@ func (d *Directory) dial() (*ldap.Conn, error) {
 	}
 	switch d.cfg.TLSMode {
 	case config.TLSLDAPS:
-		t, err := d.tlsConfig()
-		if err != nil {
-			return nil, err
-		}
-		return ldap.DialURL(d.cfg.LDAPURL, ldap.DialWithTLSConfig(t))
+		return ldap.DialURL(d.cfg.LDAPURL, ldap.DialWithTLSConfig(d.tlsCfg))
 	case config.TLSStartTLS:
 		c, err := ldap.DialURL(d.cfg.LDAPURL)
 		if err != nil {
 			return nil, err
 		}
-		t, err := d.tlsConfig()
-		if err != nil {
-			c.Close()
-			return nil, err
-		}
-		if err := c.StartTLS(t); err != nil {
+		if err := c.StartTLS(d.tlsCfg); err != nil {
 			c.Close()
 			return nil, fmt.Errorf("ldapd: starttls: %w", err)
 		}

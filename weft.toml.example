@@ -53,6 +53,20 @@ admin_uid = "admin"
 # bcrypt_cost         = 12
 # max_password_length = 72       # bcrypt truncates beyond 72 bytes
 
+# --- Sandbox (OpenBSD only; ignored on other platforms) ---
+# After reading all files, weft confines itself with pledge(2)/unveil(2). When
+# STARTED AS ROOT it additionally chroot(2)s and drops privileges to `user`
+# (chroot is skipped automatically when not started as root).
+# sandbox = true             # master switch for all OS sandboxing
+# chroot  = "/var/empty"     # chroot dir when root; "" disables chroot (keeps privdrop)
+# user    = "_weft"          # drop to this user when root; "" keeps the current uid
+# group   = ""               # "" = the user's primary group
+#
+# NOTE: a chroot to /var/empty removes access to DNS and to Unix sockets. For a
+# chrooted setup, use ldaps://<IP-address> (not a hostname) with a ca_cert_file.
+# If you connect via ldapi:// or a hostname, set chroot = "" (privileges are
+# still dropped and pledge/unveil still apply).
+
 # --- HTTP server ---
 listen_addr = "127.0.0.1:8080"   # put relayd/httpd in front for TLS
 # tls_cert_file = "/etc/ssl/weft.crt"   # optional standalone TLS instead of a proxy

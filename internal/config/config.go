@@ -6,6 +6,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -67,6 +68,14 @@ type Config struct {
 	BcryptCost        int `toml:"bcrypt_cost"`
 	MaxPasswordLength int `toml:"max_password_length"` // bcrypt truncates at 72 bytes
 
+	// Sandbox (OpenBSD only; no-op elsewhere). After reading all files weft
+	// confines itself with pledge(2)/unveil(2), and — when started as root —
+	// chroot(2)s and drops privileges to User. Chroot is skipped if not root.
+	Sandbox bool   `toml:"sandbox"` // master switch (default true)
+	Chroot  string `toml:"chroot"`  // chroot dir when root (default /var/empty); empty disables chroot
+	User    string `toml:"user"`    // drop to this user when chrooting (default _weft)
+	Group   string `toml:"group"`   // drop to this group ("" = the user's primary group)
+
 	// HTTP server.
 	ListenAddr     string   `toml:"listen_addr"`
 	TLSCertFile    string   `toml:"tls_cert_file"` // optional standalone TLS
@@ -110,6 +119,9 @@ func Default() Config {
 		MailAliasAttr:     "",
 		BcryptCost:        12,
 		MaxPasswordLength: 72,
+		Sandbox:           true,
+		Chroot:            "/var/empty",
+		User:              "_weft",
 		ListenAddr:        "127.0.0.1:8080",
 		SessionTimeout:    Duration(30 * time.Minute),
 		CookieSecure:      true,
@@ -163,6 +175,32 @@ func (c Config) IsAdminUID(uid string) bool {
 func (c Config) IsLDAPI() bool {
 	u, err := url.Parse(c.LDAPURL)
 	return err == nil && strings.EqualFold(u.Scheme, "ldapi")
+}
+
+// LDAPISocketPath returns the Unix socket path for an ldapi:// url, else "".
+func (c Config) LDAPISocketPath() string {
+	u, err := url.Parse(c.LDAPURL)
+	if err != nil || !strings.EqualFold(u.Scheme, "ldapi") {
+		return ""
+	}
+	if u.Path != "" {
+		return u.Path
+	}
+	return "/var/run/ldapi"
+}
+
+// LDAPHostIsName reports whether the LDAP host is a DNS name (not an IP and not
+// the ldapi socket), i.e. whether resolving it requires DNS at runtime.
+func (c Config) LDAPHostIsName() bool {
+	if c.IsLDAPI() {
+		return false
+	}
+	u, err := url.Parse(c.LDAPURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host != "" && net.ParseIP(host) == nil
 }
 
 // Validate checks the resolved configuration for consistency.

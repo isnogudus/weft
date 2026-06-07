@@ -7,6 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-ldap/ldap/v3 v3.4.13
 	golang.org/x/crypto v0.52.0
+	golang.org/x/sys v0.45.0
 )
 
 require (
