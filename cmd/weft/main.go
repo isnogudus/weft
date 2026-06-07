@@ -72,7 +72,9 @@ func run() error {
 	switch {
 	case privsep.IsWorker():
 		return runWorker(cfg, assets)
-	case !*dev && cfg.Privsep && privsep.Supported:
+	case !*dev && cfg.Privsep && privsep.Supported && os.Geteuid() == 0:
+		// privsep is on by default but only engages as root: only then can the
+		// worker chroot and drop privileges. Non-root / -dev run single-process.
 		return runMonitor(cfg)
 	default:
 		return runSingle(cfg, *dev, *devRootpw, assets)
@@ -97,6 +99,9 @@ func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) erro
 		}
 		dir = d
 		logStartup(cfg)
+		if cfg.Privsep && privsep.Supported && os.Geteuid() != 0 {
+			log.Print("privsep is enabled but weft is not running as root; running single-process (start as root to enable privilege separation)")
+		}
 	}
 
 	srv := server.New(cfg, dir, assets)

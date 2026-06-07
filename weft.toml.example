@@ -63,12 +63,14 @@ admin_uid = "admin"
 # user    = "_weft"          # drop to this user when root; "" keeps the current uid
 # group   = ""               # "" = the user's primary group
 #
-# privsep = false            # privilege separation (Unix). A small privileged
-#                            # monitor process opens LDAP connections (DNS +
-#                            # connect, TCP or ldapi) and passes the descriptors
-#                            # to the chrooted, unprivileged worker. This lets the
-#                            # worker keep its /var/empty chroot even with a
-#                            # hostname or an ldapi socket. Start weft as root.
+# privsep = true             # (default) privilege separation (Unix). A small
+#                            # privileged monitor process opens LDAP connections
+#                            # (DNS + connect, TCP or ldapi) and passes the
+#                            # descriptors to the chrooted, unprivileged worker,
+#                            # so the worker keeps its /var/empty chroot even with
+#                            # a hostname or an ldapi socket. It engages only when
+#                            # weft is started as root; non-root and -dev run
+#                            # single-process. Set false to disable.
 #
 # NOTE: a chroot to /var/empty removes access to DNS and to Unix sockets. For a
 # chrooted setup, use ldaps://<IP-address> (not a hostname) with a ca_cert_file.

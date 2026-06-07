@@ -25,7 +25,8 @@ All notable changes to this project are documented here. The format is based on
   descriptors to a re-exec'd, chrooted, unprivileged worker over a socketpair
   (`SCM_RIGHTS`). The worker keeps its `/var/empty` chroot even with a hostname
   or ldapi endpoint. On OpenBSD the monitor/worker are pledged to minimal
-  promise sets (`…sendfd` / `…recvfd`). Opt-in; start weft as root.
+  promise sets (`…sendfd` / `…recvfd`). On by default (`privsep = true`); engages
+  when started as root, so non-root and `-dev` run single-process.
 
 ### Changed
 - The ldapd TLS configuration (CA file / system trust store) is now loaded once

@@ -126,6 +126,7 @@ func Default() Config {
 		BcryptCost:        12,
 		MaxPasswordLength: 72,
 		Sandbox:           true,
+		Privsep:           true,
 		Chroot:            "/var/empty",
 		User:              "_weft",
 		ListenAddr:        "127.0.0.1:8080",

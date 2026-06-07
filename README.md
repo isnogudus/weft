@@ -211,17 +211,19 @@ see [`contrib/weft.rc`](contrib/weft.rc)). Everything is controlled by the
 `sandbox` / `chroot` / `user` / `group` options; on non-Unix platforms it is a
 no-op.
 
-Caveat (single-process mode): a chroot to `/var/empty` cannot reach DNS config or
-Unix sockets. For a chrooted deployment use `ldaps://<IP>` with a `ca_cert_file`.
-With an `ldapi://` url weft **skips the chroot automatically** (the socket lives
-outside it) while still dropping privileges and applying `pledge`/`unveil`. With
-a hostname, use an IP address, set `chroot = ""`, **or enable privsep** (below),
-which removes this caveat entirely.
+Caveat — single-process mode only (i.e. `privsep = false`): a chroot to
+`/var/empty` cannot reach DNS config or Unix sockets. For a chrooted deployment
+use `ldaps://<IP>` with a `ca_cert_file`; with an `ldapi://` url weft **skips the
+chroot automatically** while still dropping privileges and applying
+`pledge`/`unveil`. The **default privsep mode** (below) removes this caveat
+entirely — the chroot holds for hostnames and ldapi alike.
 
 ### Privilege separation (privsep)
 
-`privsep = true` (Unix; start weft as root) runs weft as two processes, in the
-style of OpenBSD daemons:
+privsep is **on by default** (`privsep = true`, Unix). It engages when weft is
+started as root (so the worker can chroot and drop privileges); non-root and
+`-dev` run single-process. Set `privsep = false` to disable it. It runs weft as
+two processes, in the style of OpenBSD daemons:
 
 - A small **privileged monitor** opens connections to the LDAP server — DNS +
   `connect`, for TCP *or* the ldapi Unix socket — and passes the connected file
