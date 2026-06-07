@@ -1,5 +1,9 @@
 # weft
 
+[![CI](https://github.com/isnogudus/weft/actions/workflows/ci.yml/badge.svg)](https://github.com/isnogudus/weft/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/isnogudus/weft)](https://github.com/isnogudus/weft/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A small, opinionated web UI to administer users and groups in an **existing,
 external LDAP server** — primarily OpenBSD [`ldapd(8)`](https://man.openbsd.org/ldapd.8).
 weft does *not* embed a directory; it is a thin, single-binary admin front-end

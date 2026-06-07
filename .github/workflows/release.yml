@@ -1,0 +1,51 @@
+name: Release
+
+# On every v* tag: build the static OpenBSD binaries (amd64 + arm64) and attach
+# them to the matching GitHub release (created if it does not exist yet).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish OpenBSD binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build SPA
+        run: make web
+
+      - name: Cross-compile OpenBSD binaries
+        env:
+          CGO_ENABLED: '0'
+          VERSION: ${{ github.ref_name }}
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=openbsd GOARCH="$arch" go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "weft.openbsd-${arch}" ./cmd/weft
+          done
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "weft $TAG" \
+              --notes "Automated build for $TAG. See CHANGELOG.md."
+          gh release upload "$TAG" \
+            weft.openbsd-amd64 weft.openbsd-arm64 --clobber
