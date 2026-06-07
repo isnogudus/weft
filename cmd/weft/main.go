@@ -5,12 +5,14 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -113,6 +115,7 @@ func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) erro
 	}
 
 	if !dev {
+		warmRuntime()
 		// In-process confinement. A chroot can't reach an ldapi socket, so skip
 		// it in that case (privilege drop + pledge/unveil still apply). Use
 		// privsep to keep the chroot with ldapi or a hostname.
@@ -197,6 +200,7 @@ func runWorker(cfg config.Config, assets fs.FS) error {
 		return err
 	}
 
+	warmRuntime()
 	if err := sandbox.ConfineWorker(sandbox.Config{
 		Enabled: cfg.Sandbox,
 		Chroot:  cfg.Chroot,
@@ -235,6 +239,16 @@ func wrapTLS(cfg config.Config, ln net.Listener) (net.Listener, error) {
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 	}), nil
+}
+
+// warmRuntime triggers lazy, filesystem-backed initialisation before the
+// sandbox locks the filesystem: the net/http MIME type table (which reads
+// /etc/mime.types on first use) and the CSPRNG. Otherwise serving a .js/.css
+// asset or minting a session id could try to open a file inside the chroot.
+func warmRuntime() {
+	_ = mime.TypeByExtension(".html")
+	var b [1]byte
+	_, _ = rand.Read(b[:])
 }
 
 func newHTTPServer(srv *server.Server) *http.Server {

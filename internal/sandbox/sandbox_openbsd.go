@@ -85,7 +85,10 @@ func ConfineWorker(c Config) error {
 	if err := unix.UnveilBlock(); err != nil {
 		return fmt.Errorf("unveil lock: %w", err)
 	}
-	const promises = "stdio inet recvfd"
+	// rpath is harmless inside the (empty) chroot -- nothing is readable -- but
+	// it lets any lazy open() (e.g. net/http's MIME lookup of /etc/mime.types)
+	// fail gracefully with ENOENT instead of aborting the process under pledge.
+	const promises = "stdio rpath inet recvfd"
 	if err := unix.PledgePromises(promises); err != nil {
 		return fmt.Errorf("pledge %q: %w", promises, err)
 	}
