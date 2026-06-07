@@ -22,8 +22,8 @@ const (
 
 // request/status bytes exchanged over the control socket.
 const (
-	reqDial  byte = 1 // worker -> monitor: "open an LDAP connection"
-	statusOK byte = 0 // monitor -> worker: fd follows
+	reqDial   byte = 1 // worker -> monitor: "open an LDAP connection"
+	statusOK  byte = 0 // monitor -> worker: fd follows
 	statusErr byte = 1 // monitor -> worker: dial failed, no fd
 )
 

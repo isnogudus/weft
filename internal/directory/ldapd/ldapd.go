@@ -42,7 +42,7 @@ var (
 // Directory dials and binds against ldapd.
 type Directory struct {
 	cfg     config.Config
-	tlsCfg  *tls.Config             // built once at New(); nil for ldapi/plain
+	tlsCfg  *tls.Config              // built once at New(); nil for ldapi/plain
 	dialRaw func() (net.Conn, error) // opens a raw (un-TLS'd) connection
 }
 
