@@ -220,10 +220,12 @@ entirely — the chroot holds for hostnames and ldapi alike.
 
 ### Privilege separation (privsep)
 
-privsep is **on by default** (`privsep = true`, Unix). It engages when weft is
-started as root (so the worker can chroot and drop privileges); non-root and
-`-dev` run single-process. Set `privsep = false` to disable it. It runs weft as
-two processes, in the style of OpenBSD daemons:
+privsep is **on by default** (`privsep = true`, Unix) and is the process model
+for every non-`-dev` run. Started as root, the worker additionally chroots and
+drops privileges; without root those two steps are skipped but the process split
+and `pledge`/`unveil` still apply — same model either way. Set `privsep = false`
+to fall back to a single process (or run `-dev`). It runs weft as two processes,
+in the style of OpenBSD daemons:
 
 - A small **privileged monitor** opens connections to the LDAP server — DNS +
   `connect`, for TCP *or* the ldapi Unix socket — and passes the connected file

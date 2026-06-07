@@ -75,11 +75,13 @@ func run() error {
 	switch {
 	case privsep.IsWorker():
 		return runWorker(cfg, assets)
-	case !*dev && cfg.Privsep && privsep.Supported && os.Geteuid() == 0:
-		// privsep is on by default but only engages as root: only then can the
-		// worker chroot and drop privileges. Non-root / -dev run single-process.
+	case !*dev && cfg.Privsep && privsep.Supported:
+		// privsep (monitor/worker) is the model for every non-dev run. As root
+		// the worker also chroots and drops privileges; without root those steps
+		// are skipped but the process split and pledge/unveil still apply.
 		return runMonitor(cfg)
 	default:
+		// -dev (in-memory fake), privsep=false, or a non-Unix platform.
 		return runSingle(cfg, *dev, *devRootpw, assets)
 	}
 }
@@ -105,9 +107,6 @@ func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) erro
 		}
 		dir = d
 		logStartup(cfg)
-		if cfg.Privsep && privsep.Supported && os.Geteuid() != 0 {
-			log.Print("privsep is enabled but weft is not running as root; running single-process (start as root to enable privilege separation)")
-		}
 	}
 
 	srv := server.New(cfg, dir, assets)
@@ -176,8 +175,13 @@ func runMonitor(cfg config.Config) error {
 	if !ok {
 		return fmt.Errorf("privsep: expected a TCP listener for %s", cfg.ListenAddr)
 	}
-	log.Printf("privsep: monitor (pid %d) opening LDAP connections on the worker's behalf; worker chroots to %q, drops to %q",
-		os.Getpid(), cfg.Chroot, cfg.User)
+	if os.Geteuid() == 0 {
+		log.Printf("privsep: monitor (pid %d) dialing LDAP for the worker; worker chroots to %q and drops to %q",
+			os.Getpid(), cfg.Chroot, cfg.User)
+	} else {
+		log.Printf("privsep: monitor (pid %d) dialing LDAP for the worker (not root: worker runs without chroot/privilege drop)",
+			os.Getpid())
+	}
 
 	return privsep.RunMonitor(tcpLn, dial, func() error {
 		return sandbox.ConfineMonitor(sandbox.Config{
