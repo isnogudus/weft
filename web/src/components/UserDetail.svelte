@@ -7,6 +7,8 @@
   let groups = $state([])
   const userAttrs = app.meta?.userAttrs || []
   const attrLabel = (a) => (i18n.lang === 'de' ? a.labelDe : a.labelEn) || a.attr
+  // uid and cn are the identical value when the directory names entries by cn.
+  const idAttrIsCN = app.meta?.userIdAttr === 'cn'
 
   $effect(() => {
     api.get(`/users/${user.uid}/groups`).then((g) => (groups = g)).catch(() => {})
@@ -24,10 +26,12 @@
     <div class="panel">
       <table>
         <tbody>
-          <tr><th>uid</th><td>{user.uid}</td></tr>
+          <tr><th>{idAttrIsCN ? 'cn' : 'uid'}</th><td>{user.uid}</td></tr>
           <tr><th>{t('Vorname')}</th><td>{user.givenName || '—'}</td></tr>
           <tr><th>{t('Nachname (sn)')}</th><td>{user.sn || '—'}</td></tr>
-          <tr><th>{t('Name (cn)')}</th><td>{user.cn || '—'}</td></tr>
+          {#if !idAttrIsCN}
+            <tr><th>{t('Name (cn)')}</th><td>{user.cn || '—'}</td></tr>
+          {/if}
           <tr><th>{t('Anzeigename')}</th><td>{user.displayName || '—'}</td></tr>
           {#if user.posix}
             <tr><th>uidNumber</th><td>{user.posix.uidNumber}</td></tr>

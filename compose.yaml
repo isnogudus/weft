@@ -1,21 +1,72 @@
-# weft + OpenLDAP -- a self-contained demo/test stack.
+# weft -- Docker Compose examples.
 #
-#   docker compose up --build
-#   -> weft UI:  http://localhost:8080   (login: admin / adminpw)
+# 1) Point weft at LDAP infrastructure you already run (the default `weft`
+#    service, no profile needed). Configure ./weft.toml with your real
+#    ldap_url, base_dn, admin_dn and directory flavor (see
+#    weft.toml.example) -- it's already gitignored, so your real settings
+#    never land in the repo. Then:
 #
-# The OpenLDAP container creates dc=example,dc=org with the rootdn
-# cn=admin,dc=example,dc=org; weft's first-run wizard then creates ou=people,
-# ou=groups and the default primary group (enter the admin password "adminpw").
+#      docker compose up --build weft
 #
-# NOTE: this stack talks plain LDAP on the internal compose network and serves
-# plain HTTP -- fine for evaluation, not for production. For production use
-# ldaps:// (or StartTLS) with a ca_cert_file, put TLS in front of weft, and
-# drop allow_plain_bind/cookie_secure overrides.
+#    The container joins the external "frontend" and "matrix" networks below
+#    -- rename them to whatever your reverse proxy / LDAP stack actually use
+#    (check with `docker network ls`; Compose prefixes network names with the
+#    project directory by default unless that project sets `name:` itself).
+#    Once weft shares that network, it reaches your LDAP server by its
+#    compose service name (e.g. ldap_url = "ldap://openldap:389" in
+#    ./weft.toml) via Docker's built-in DNS -- no depends_on needed (Compose
+#    can't depend_on a service from another project anyway) and none wanted:
+#    weft dials LDAP lazily per request, not at startup, so it doesn't matter
+#    which of the two containers comes up first.
+#    No host port is published by default -- reach weft through the reverse
+#    proxy on the frontend network, or uncomment `ports:` for direct
+#    http://localhost:8080 access while testing.
+#
+# 2) Self-contained demo stack, no external infra needed (bundled OpenLDAP):
+#
+#      docker compose --profile demo up --build openldap weft-demo
+#
+#    -> http://localhost:8080, setup wizard rootpw "adminpw", login admin/adminpw
+#    Talks plain LDAP internally and serves plain HTTP -- evaluation only.
+#
+# 3) In-memory dev mode, no LDAP server at all:
+#
+#      docker compose --profile dev up --build weft-dev
+#
+#    -> http://localhost:8080, login admin/rootpw. Data lives only in the
+#    container's memory and is gone on restart.
+#
+# Profiles only ADD services, they never exclude the default ones -- pass the
+# explicit service names as shown above so e.g. the demo command doesn't also
+# try (and fail) to start the default `weft` against your own infra.
 
 services:
+  # --- 1) Your own LDAP infrastructure (default) ---
+  weft:
+    build:
+      context: .
+    networks:
+      - frontend
+      - matrix
+    # ports:
+    #   - "8080:8080"   # uncomment for direct localhost access without a reverse proxy
+    volumes:
+      - ./weft.toml:/etc/weft/weft.toml:ro
+    command: ["-config", "/etc/weft/weft.toml"]
+
+  # --- 2) Self-contained demo stack (opt-in via --profile demo) ---
   openldap:
+    profiles: ["demo"]
     image: osixia/openldap:1.5.0
     # platform: linux/amd64   # uncomment if your host arch has no native image
+    # Works around a runc/seccomp bug ("error adding SSB flag to seccomp
+    # filter: ... API level: 1") seen on some Docker Desktop/Colima setups,
+    # where the host kernel's seccomp API level is misdetected. It breaks any
+    # exec into the container (including the healthcheck below), not just
+    # openldap. Root fix: update Docker Desktop/Colima to a runc >= 1.1.6.
+    # Safe here since this stack is local-only.
+    security_opt:
+      - seccomp:unconfined
     environment:
       LDAP_ORGANISATION: "Example Org"
       LDAP_DOMAIN: "example.org"          # -> base dc=example,dc=org
@@ -30,7 +81,8 @@ services:
       timeout: 3s
       retries: 12
 
-  weft:
+  weft-demo:
+    profiles: ["demo"]
     build:
       context: .
     depends_on:
@@ -51,6 +103,23 @@ services:
     volumes:
       - ./contrib/docker/weft.toml:/etc/weft/weft.toml:ro
     command: ["-config", "/etc/weft/weft.toml"]
+
+  # --- 3) In-memory dev directory (opt-in via --profile dev) ---
+  weft-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+    ports:
+      - "8080:8080"
+    command: ["-dev"]
+
+networks:
+  frontend:
+    external: true
+    # name: frontend   # set explicitly if `docker network ls` shows a different name
+  matrix:
+    external: true
+    # name: matrix
 
 volumes:
   ldap-data:

@@ -184,6 +184,9 @@ func TestMetaExposesSessionTimeout(t *testing.T) {
 	if m.SessionTimeoutSeconds <= 0 {
 		t.Fatalf("meta sessionTimeoutSeconds = %d, want > 0", m.SessionTimeoutSeconds)
 	}
+	if m.UserIDAttr != "uid" {
+		t.Fatalf("meta userIdAttr = %q, want default uid", m.UserIDAttr)
+	}
 }
 
 func TestRequiresAuth(t *testing.T) {

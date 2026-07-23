@@ -1,5 +1,6 @@
 <script>
   import { api } from '../lib/api.js'
+  import { app } from '../lib/store.svelte.js'
   import { t } from '../lib/i18n.svelte.js'
   import UserEditor from './UserEditor.svelte'
   import UserDetail from './UserDetail.svelte'
@@ -17,6 +18,9 @@
   let resetting = $state(null) // uid
   let viewing = $state(null)   // uid (groups modal)
   let importing = $state(false)
+  // uid and cn hold the identical value when the directory names entries by
+  // cn (see UserEditor.svelte) -- showing both columns would just repeat it.
+  const idAttrIsCN = app.meta?.userIdAttr === 'cn'
 
   async function load() {
     loading = true
@@ -59,13 +63,13 @@
   {:else}
     <table>
       <thead>
-        <tr><th>uid</th><th>{t('Name')}</th><th>POSIX</th><th>{t('Mail')}</th><th></th></tr>
+        <tr><th>{idAttrIsCN ? 'cn' : 'uid'}</th>{#if !idAttrIsCN}<th>{t('Name')}</th>{/if}<th>POSIX</th><th>{t('Mail')}</th><th></th></tr>
       </thead>
       <tbody>
         {#each users as u (u.uid)}
           <tr class="clickable" onclick={() => (detail = u)} title={t('Details anzeigen')}>
             <td><strong>{u.uid}</strong></td>
-            <td>{u.cn}</td>
+            {#if !idAttrIsCN}<td>{u.cn}</td>{/if}
             <td>{u.posix ? `${u.posix.uidNumber}/${u.posix.gidNumber}` : '—'}</td>
             <td>
               {#if u.mail}

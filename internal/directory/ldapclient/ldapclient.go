@@ -261,7 +261,8 @@ func (c *conn) ListUsers(_ context.Context, term string) ([]directory.User, erro
 	filter := "(objectClass=inetOrgPerson)"
 	if term != "" {
 		t := ldap.EscapeFilter(term)
-		filter = fmt.Sprintf("(&(objectClass=inetOrgPerson)(|(uid=*%s*)(cn=*%s*)(displayName=*%s*)))", t, t, t)
+		filter = fmt.Sprintf("(&(objectClass=inetOrgPerson)(|(%s=*%s*)(cn=*%s*)(displayName=*%s*)))",
+			c.d.cfg.UserIDAttr, t, t, t)
 	}
 	req := ldap.NewSearchRequest(
 		c.d.cfg.PeopleDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
@@ -292,8 +293,11 @@ func (c *conn) GetUser(_ context.Context, uid string) (*directory.User, error) {
 }
 
 func (c *conn) parseUser(e *ldap.Entry) *directory.User {
+	// When UserIDAttr is "cn", this and the CN field below read the SAME LDAP
+	// attribute -- they naturally end up equal, which is correct: the RDN
+	// value must be one of the entry's own cn values (see UpdateUser/CreateUser).
 	u := &directory.User{
-		UID:         e.GetAttributeValue("uid"),
+		UID:         e.GetAttributeValue(c.d.cfg.UserIDAttr),
 		CN:          e.GetAttributeValue("cn"),
 		SN:          e.GetAttributeValue("sn"),
 		GivenName:   e.GetAttributeValue("givenName"),
@@ -352,7 +356,13 @@ func (c *conn) CreateUser(_ context.Context, u directory.User, hashedPassword st
 	}
 	classes = append(classes, c.d.cfg.UserExtraClasses...)
 	req.Attribute("objectClass", classes)
-	req.Attribute("uid", []string{u.UID})
+	// When UserIDAttr is "cn" there is no separate uid attribute at all: the
+	// RDN (built from u.UID via UserDN) must be one of cn's own values, and
+	// the service layer already sets u.CN == u.UID in that mode, so the cn
+	// write below covers it.
+	if c.d.cfg.UserIDAttr != "cn" {
+		req.Attribute("uid", []string{u.UID})
+	}
 	req.Attribute("cn", []string{u.CN})
 	req.Attribute("sn", []string{u.SN})
 	addIf(req, "givenName", u.GivenName)
@@ -517,7 +527,7 @@ func (c *conn) RenameUID(ctx context.Context, oldUID, newUID string) error {
 // renameModifyDN renames via ModifyDN (OpenLDAP): atomic for the entry itself.
 // memberUid values are plain uid strings, so the group fixup still follows.
 func (c *conn) renameModifyDN(ctx context.Context, oldUID, newUID string) error {
-	req := ldap.NewModifyDNRequest(c.d.cfg.UserDN(oldUID), "uid="+newUID, true, "")
+	req := ldap.NewModifyDNRequest(c.d.cfg.UserDN(oldUID), c.d.cfg.UserRDN(newUID), true, "")
 	if err := mapErr(c.lc.ModifyDN(req)); err != nil {
 		return err
 	}
@@ -549,7 +559,7 @@ func (c *conn) renameCopyDelete(ctx context.Context, oldUID, newUID string) erro
 	add := ldap.NewAddRequest(c.d.cfg.UserDN(newUID), nil)
 	for _, a := range e.Attributes {
 		vals := a.Values
-		if strings.EqualFold(a.Name, "uid") {
+		if strings.EqualFold(a.Name, c.d.cfg.UserIDAttr) {
 			vals = []string{newUID}
 		}
 		add.Attribute(a.Name, vals)

@@ -41,6 +41,21 @@ type Config struct {
 	// as how a uid rename is performed (OpenLDAP: ModifyDN; ldapd: copy+delete).
 	Directory string `toml:"directory"`
 
+	// UserIDAttr selects which LDAP attribute is the user's naming/identifier
+	// attribute: "uid" (default) or "cn". It becomes the RDN in every user DN
+	// (UserDN), the login name, and the value tracked in group memberUid.
+	//
+	// Set "cn" for directories that name user entries by cn= instead of uid=
+	// (e.g. some Matrix/Synapse LDAP setups). The identifier keeps the same
+	// strict charset either way (see service.ValidName) -- Synapse's own
+	// localpart rules reject spaces/uppercase/non-ASCII, so cn must hold a
+	// short login handle here, not a full display name, exactly like uid
+	// would. When UserIDAttr is "cn", the entry's cn attribute IS the
+	// identifier (LDAP requires the RDN's value to be one of the entry's own
+	// attribute values), so there is no separately editable "cn" display
+	// field in this mode -- givenName/sn/displayName still are.
+	UserIDAttr string `toml:"user_id_attr"`
+
 	// Transport security to the LDAP server.
 	TLSMode            TLSMode `toml:"tls_mode"`
 	CACertFile         string  `toml:"ca_cert_file"`
@@ -51,8 +66,8 @@ type Config struct {
 	// session then binds as the admin DN, which must equal ldapd's rootdn.
 	//
 	// AdminDN is that bind DN. Leave it empty to derive the default
-	// uid=<AdminUID>,ou=people,<base>; set it explicitly when your ldapd rootdn
-	// has a different shape (e.g. "cn=admin,dc=example,dc=org"). The admin is
+	// <user_id_attr>=<AdminUID>,ou=people,<base>; set it explicitly when your
+	// rootdn has a different shape (e.g. "cn=admin,dc=example,dc=org"). The admin is
 	// synthetic -- it need not exist as a directory entry (ldapd special-cases
 	// the rootpw). Resolve via AdminBindDN().
 	AdminUID string `toml:"admin_uid"`
@@ -163,6 +178,7 @@ func (d *Duration) UnmarshalText(text []byte) error {
 func Default() Config {
 	return Config{
 		Directory:         DirectoryLdapd,
+		UserIDAttr:        "uid",
 		TLSMode:           TLSLDAPS,
 		AdminUID:          "admin",
 		AllowAdmin:        true,
@@ -200,14 +216,49 @@ func (c Config) PeopleDN() string { return "ou=" + c.PeopleOU + "," + c.BaseDN }
 // GroupsDN returns the groups OU DN.
 func (c Config) GroupsDN() string { return "ou=" + c.GroupsOU + "," + c.BaseDN }
 
-// UserDN builds the bind/entry DN for a uid from the fixed template.
-func (c Config) UserDN(uid string) string {
-	return "uid=" + uid + ",ou=" + c.PeopleOU + "," + c.BaseDN
+// UserRDN builds just the RDN ("<user_id_attr>=<value>") for an identifier,
+// e.g. for a ModifyDN request's new RDN.
+func (c Config) UserRDN(id string) string {
+	return c.UserIDAttr + "=" + escapeDNValue(id)
+}
+
+// UserDN builds the bind/entry DN for an identifier value, using the
+// configured UserIDAttr ("uid" or "cn") as the RDN attribute.
+func (c Config) UserDN(id string) string {
+	return c.UserRDN(id) + ",ou=" + c.PeopleOU + "," + c.BaseDN
 }
 
 // GroupDN builds the entry DN for a group cn.
 func (c Config) GroupDN(cn string) string {
-	return "cn=" + cn + ",ou=" + c.GroupsOU + "," + c.BaseDN
+	return "cn=" + escapeDNValue(cn) + ",ou=" + c.GroupsOU + "," + c.BaseDN
+}
+
+// escapeDNValue escapes a value for safe use in an RFC 4514 DN string:
+// leading space/'#', trailing space, and the characters , + " \ < > ; are
+// backslash-escaped; NUL is rejected outright (ValidName already excludes all
+// of these, so this is defense in depth against DN injection, not the primary
+// guard).
+func escapeDNValue(s string) string {
+	var b strings.Builder
+	runes := []rune(s)
+	for i, r := range runes {
+		switch {
+		case r == 0:
+			continue // NUL has no valid escape a directory server will accept; drop it
+		case r == ' ' && (i == 0 || i == len(runes)-1):
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case strings.ContainsRune(`,+"\<>;`, r):
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r == '#' && i == 0:
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // HomeDir renders the home directory for a uid from HomeTemplate.
@@ -318,6 +369,9 @@ func (c Config) Validate() error {
 	}
 	if c.Directory != DirectoryLdapd && c.Directory != DirectoryOpenLDAP {
 		return fmt.Errorf("config: directory must be %q or %q", DirectoryLdapd, DirectoryOpenLDAP)
+	}
+	if c.UserIDAttr != "uid" && c.UserIDAttr != "cn" {
+		return fmt.Errorf("config: user_id_attr must be %q or %q", "uid", "cn")
 	}
 	if c.AdminUID == "" {
 		return fmt.Errorf("config: admin_uid is required")

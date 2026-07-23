@@ -7,6 +7,12 @@
   let { user, onClose, onSaved } = $props()
   const isNew = !user.uid
   let showPw = $state(false)
+  // When the directory's naming attribute is cn, the RDN value must be one of
+  // the entry's own cn values (LDAP constraint) -- server-side, cn is forced
+  // to equal the identifier regardless of what's submitted (see
+  // service.collapseCNToUID), so there is no independently meaningful,
+  // separately editable cn/display-name field in this mode.
+  const idAttrIsCN = app.meta?.userIdAttr === 'cn'
 
   let uid = $state(user.uid || '')
   let cn = $state(user.cn || '')
@@ -49,7 +55,8 @@
 
   function buildPayload() {
     const p = {
-      cn, sn,
+      cn: idAttrIsCN ? uid : cn,
+      sn,
       givenName: givenName || '',
       displayName: displayName || '',
     }
@@ -103,13 +110,15 @@
     <h2>{isNew ? t('Neuer Benutzer') : t('Benutzer {uid} bearbeiten', { uid: user.uid })}</h2>
 
     {#if isNew}
-      <label><span>uid</span><input bind:value={uid} placeholder="z. B. jdoe" /></label>
+      <label><span>{idAttrIsCN ? 'cn' : 'uid'}</span><input bind:value={uid} placeholder="z. B. jdoe" /></label>
     {/if}
     <div class="row">
       <label style="flex:1"><span>{t('Vorname (givenName)')}</span><input bind:value={givenName} /></label>
       <label style="flex:1"><span>{t('Nachname (sn) *')}</span><input bind:value={sn} /></label>
     </div>
-    <label><span>{t('Anzeigename (cn) *')}</span><input bind:value={cn} /></label>
+    {#if !idAttrIsCN}
+      <label><span>{t('Anzeigename (cn) *')}</span><input bind:value={cn} /></label>
+    {/if}
     <label><span>displayName</span><input bind:value={displayName} /></label>
     {#if isNew}
       <label><span>{t('Passwort *')}</span>

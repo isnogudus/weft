@@ -113,6 +113,26 @@ dc=example,dc=org
 - **uid/gid numbers** are auto-allocated (smallest free in the configured range,
   serialised by an app-side lock) and can be overridden by the admin.
 
+### Naming users by cn instead of uid
+
+Some directories (notably Matrix/Synapse LDAP setups, where
+[matrix-synapse-ldap3](https://github.com/matrix-org/matrix-synapse-ldap3)'s
+`attributes.uid` config key commonly maps to `cn`) name user entries
+`cn=<value>,ou=people,<base>` instead of `uid=<value>,...`. Set
+`user_id_attr = "cn"` in `weft.toml` and weft uses `cn` as the RDN, login name,
+and `memberUid` value everywhere instead of `uid`.
+
+The identifier keeps the same strict charset regardless of which attribute
+backs it (see `service.ValidName`): Synapse's own registration check rejects
+localparts with spaces, uppercase, or non-ASCII characters outright (HTTP 400
+`INVALID_USERNAME`), so `cn` must hold a short login handle (`jdoe`) here, not
+a full display name ("Jane Doe") — `givenName`/`sn`/`displayName` remain free
+text for that. Because LDAP requires an entry's RDN value to be one of its own
+attribute's values, `cn` can't independently hold a different display string
+in this mode: weft's user form has no separate "cn" field when
+`user_id_attr = "cn"`, and the API forces `cn` to equal the identifier on
+write regardless of what's submitted.
+
 ## Verified ldapd facts
 
 These shaped the design (checked against the ldapd source and man pages):
@@ -234,17 +254,24 @@ without an env equivalent (e.g. the `[[user_attr]]` tables). Started as root,
 the privsep worker chroots to `/var/empty` and drops to `_weft` as usual; run
 the container with a non-root user to skip chroot/privdrop.
 
-[`compose.yaml`](compose.yaml) is a self-contained evaluation stack with an
-OpenLDAP server (`directory = "openldap"`):
+[`compose.yaml`](compose.yaml) covers three ways to run weft; profiles only
+*add* services, so pass the explicit names shown below (otherwise the default
+`weft` service also starts and tries to reach networks you may not have):
 
-```sh
-docker compose up --build
-```
-
-Then open http://localhost:8080, run the setup wizard with the demo rootpw
-`adminpw`, and log in as `admin` / `adminpw`. The stack speaks plain LDAP on
-the internal network and plain HTTP — evaluation only; see the comments in
-`compose.yaml` for what to change in production.
+- **Your own LDAP infrastructure** (the default `weft` service, no profile):
+  configure `./weft.toml` with your real `ldap_url`, `base_dn`, `admin_dn` and
+  `directory` (it's gitignored, so real settings never land in the repo), then
+  `docker compose up --build weft`. The container joins the external
+  `frontend`/`matrix` networks declared at the bottom of `compose.yaml` —
+  rename those to whatever your reverse proxy and LDAP stack actually use.
+- **Self-contained demo stack**, bundled OpenLDAP, no external infra needed:
+  `docker compose --profile demo up --build openldap weft-demo` — open
+  http://localhost:8080, run the setup wizard with the demo rootpw `adminpw`,
+  log in as `admin` / `adminpw`. Plain LDAP + plain HTTP — evaluation only.
+- **In-memory dev mode**, no LDAP server at all, e.g. to try the bulk-import
+  wizard: `docker compose --profile dev up --build weft-dev` — open
+  http://localhost:8080, log in as `admin` / `rootpw`. Data lives only in the
+  container and is gone on restart.
 
 ## Security
 

@@ -90,6 +90,52 @@ func TestUserAttrLabel(t *testing.T) {
 	}
 }
 
+func TestUserIDAttr(t *testing.T) {
+	c := validBase()
+	if c.UserIDAttr != "uid" {
+		t.Fatalf("default UserIDAttr = %q, want uid", c.UserIDAttr)
+	}
+
+	c.UserIDAttr = "cn"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("user_id_attr=cn should validate: %v", err)
+	}
+	if got := c.UserDN("felix"); got != "cn=felix,ou=people,dc=example,dc=org" {
+		t.Fatalf("UserDN with cn id attr = %q", got)
+	}
+	if got := c.AdminBindDN(); got != "cn=admin,ou=people,dc=example,dc=org" {
+		t.Fatalf("derived AdminBindDN with cn id attr = %q", got)
+	}
+
+	c.UserIDAttr = "mail"
+	if err := c.Validate(); err == nil {
+		t.Fatal("user_id_attr other than uid/cn should be rejected")
+	}
+}
+
+func TestEscapeDNValue(t *testing.T) {
+	c := validBase()
+	cases := []struct{ in, want string }{
+		{"alice", "alice"},
+		{"a,b", `a\,b`},
+		{`a"b`, `a\"b`},
+		{"a+b", `a\+b`},
+		{"a;b", `a\;b`},
+		{"a<b>", `a\<b\>`},
+		{`a\b`, `a\\b`},
+		{" alice", `\ alice`},
+		{"alice ", `alice\ `},
+		{"#alice", `\#alice`},
+		{"mid#dle", "mid#dle"}, // '#' only special when leading
+	}
+	for _, tc := range cases {
+		want := "uid=" + tc.want + ",ou=people,dc=example,dc=org"
+		if got := c.UserDN(tc.in); got != want {
+			t.Errorf("UserDN(%q) = %q, want %q", tc.in, got, want)
+		}
+	}
+}
+
 func TestLDAPIOverridesTLS(t *testing.T) {
 	c := validBase()
 	c.LDAPURL = "ldapi:///var/run/ldapi"
@@ -118,6 +164,9 @@ func TestDNHelpers(t *testing.T) {
 	}
 	if got := c.GroupDN("devs"); got != "cn=devs,ou=groups,dc=example,dc=org" {
 		t.Fatalf("GroupDN = %q", got)
+	}
+	if got := c.UserRDN("alice"); got != "uid=alice" {
+		t.Fatalf("UserRDN = %q", got)
 	}
 	if got := c.HomeDir("alice"); got != "/home/alice" {
 		t.Fatalf("HomeDir = %q", got)

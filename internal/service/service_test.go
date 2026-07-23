@@ -64,6 +64,50 @@ func TestCreateUserPOSIXDefaults(t *testing.T) {
 	}
 }
 
+func TestCreateUserCNIdentity(t *testing.T) {
+	cfg := config.Default()
+	cfg.BaseDN = "dc=example,dc=org"
+	cfg.UserIDAttr = "cn"
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10005}, idalloc.Range{Min: 20000, Max: 20005})
+	f.AddGroup(directory.Group{CN: "users", GIDNumber: 20000})
+	admin, err := f.BindAdmin(context.Background(), "rootpw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(cfg)
+	ctx := context.Background()
+
+	// cn is forced to equal the identifier regardless of what's submitted --
+	// LDAP requires the RDN's value to be one of the entry's own cn values.
+	u, err := s.CreateUser(ctx, admin, NewUser{UID: "jdoe", CN: "Should be ignored", SN: "Doe", Password: "hunter2hunter2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.CN != "jdoe" {
+		t.Fatalf("CN = %q, want it collapsed to the identifier %q", u.CN, u.UID)
+	}
+	got, err := admin.GetUser(ctx, "jdoe")
+	if err != nil || got.CN != "jdoe" {
+		t.Fatalf("stored user: %+v, err %v", got, err)
+	}
+
+	// Even an empty submitted cn (matching the SPA hiding that field in this
+	// mode) must not fail validText("cn", ...) -- it's populated from uid
+	// before validation runs.
+	if _, err := s.CreateUser(ctx, admin, NewUser{UID: "asmith", SN: "Smith", Password: "hunter2hunter2"}); err != nil {
+		t.Fatalf("create with empty cn should succeed in cn-identity mode: %v", err)
+	}
+
+	// UpdateUser collapses the same way.
+	u, err = s.UpdateUser(ctx, admin, NewUser{UID: "jdoe", CN: "Still ignored", SN: "Doe2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.CN != "jdoe" {
+		t.Fatalf("UpdateUser: CN = %q, want collapsed to jdoe", u.CN)
+	}
+}
+
 func setupWithAttrs(t *testing.T) (*Service, directory.Conn) {
 	t.Helper()
 	cfg := config.Default()

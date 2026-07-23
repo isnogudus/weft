@@ -134,7 +134,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, metaDTO{
-		BaseDN: c.BaseDN, PeopleOU: c.PeopleOU, GroupsOU: c.GroupsOU,
+		BaseDN: c.BaseDN, UserIDAttr: c.UserIDAttr, PeopleOU: c.PeopleOU, GroupsOU: c.GroupsOU,
 		PrimaryGroup: c.PrimaryGroup, DefaultShell: c.DefaultShell, HomeTemplate: c.HomeTemplate,
 		UIDMin: c.UIDMin, UIDMax: c.UIDMax, GIDMin: c.GIDMin, GIDMax: c.GIDMax,
 		MaxPwdLength: c.MaxPasswordLength, MailAttr: c.MailAttr, MailAliasAttr: c.MailAliasAttr,

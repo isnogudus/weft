@@ -8,6 +8,8 @@
   let profile = $state(null)
   const userAttrs = app.meta?.userAttrs || []
   const attrLabel = (a) => (i18n.lang === 'de' ? a.labelDe : a.labelEn) || a.attr
+  // uid and cn are the identical value when the directory names entries by cn.
+  const idAttrIsCN = app.meta?.userIdAttr === 'cn'
   let groups = $state([])
   let showPw = $state(false)
   let error = $state('')
@@ -42,8 +44,10 @@
     <div class="panel">
       <table>
         <tbody>
-          <tr><th>uid</th><td>{profile.uid}</td></tr>
-          <tr><th>{t('Name (cn)')}</th><td>{profile.cn || '—'}</td></tr>
+          <tr><th>{idAttrIsCN ? 'cn' : 'uid'}</th><td>{profile.uid}</td></tr>
+          {#if !idAttrIsCN}
+            <tr><th>{t('Name (cn)')}</th><td>{profile.cn || '—'}</td></tr>
+          {/if}
           <tr><th>{t('Nachname (sn)')}</th><td>{profile.sn || '—'}</td></tr>
           <tr><th>{t('Anzeigename')}</th><td>{profile.displayName || '—'}</td></tr>
           {#if profile.posix}

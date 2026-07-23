@@ -11,6 +11,17 @@ base_dn  = "dc=example,dc=org"
 # renames uids atomically via ModifyDN). See README for the OpenLDAP ACLs.
 # directory = "ldapd"
 
+# User naming/identifier attribute: "uid" (default) or "cn". This becomes the
+# RDN of every user entry (<user_id_attr>=<value>,ou=people,<base>), the login
+# name, and the value tracked in group memberUid. Set "cn" for directories
+# that name user entries by cn= instead of uid= -- e.g. some Matrix/Synapse
+# LDAP setups map cn to the login attribute (matrix-synapse-ldap3's
+# `attributes.uid` config key). The value keeps the same strict charset
+# either way: Synapse's own localpart rules reject spaces/uppercase/non-ASCII,
+# so cn must hold a short login handle here (e.g. "jdoe"), not a full display
+# name -- givenName/sn/displayName remain free text for that.
+# user_id_attr = "uid"
+
 # For a LOCAL setup (weft and ldapd on the same host) the simplest option is the
 # Unix socket -- no TLS, no certificates:
 #   ldap_url = "ldapi:///var/run/ldapi"

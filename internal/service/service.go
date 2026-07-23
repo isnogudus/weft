@@ -62,6 +62,7 @@ func (s *Service) CreateUser(ctx context.Context, c directory.Conn, in NewUser) 
 	if err := validName("uid", in.UID); err != nil {
 		return nil, err
 	}
+	s.collapseCNToUID(&in)
 	if err := validText("cn", in.CN); err != nil {
 		return nil, err
 	}
@@ -156,6 +157,7 @@ func (s *Service) resolvePOSIX(ctx context.Context, c directory.Conn, uid string
 // UpdateUser writes profile changes. Toggling the POSIX profile on allocates a
 // uidNumber; existing POSIX numbers are preserved unless overridden.
 func (s *Service) UpdateUser(ctx context.Context, c directory.Conn, in NewUser) (*directory.User, error) {
+	s.collapseCNToUID(&in)
 	if err := validText("cn", in.CN); err != nil {
 		return nil, err
 	}
@@ -228,6 +230,17 @@ func (s *Service) CreateGroup(ctx context.Context, c directory.Conn, cn string, 
 		return nil, err
 	}
 	return &g, nil
+}
+
+// collapseCNToUID makes cn track uid when the directory's naming attribute IS
+// cn (config.UserIDAttr == "cn"): LDAP requires the RDN's value to be one of
+// the entry's own cn values, so the two cannot diverge. In that mode the SPA
+// has no separate cn/display-name field to submit; whatever it did send is
+// overridden here rather than rejected as a mismatch.
+func (s *Service) collapseCNToUID(in *NewUser) {
+	if s.cfg.UserIDAttr == "cn" {
+		in.CN = in.UID
+	}
 }
 
 // normalizeExtra validates the extra-attribute values against the configured

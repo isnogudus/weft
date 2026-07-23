@@ -196,7 +196,12 @@ type bootstrapReq struct {
 
 // metaDTO exposes non-sensitive defaults so the SPA can pre-fill forms.
 type metaDTO struct {
-	BaseDN        string `json:"baseDn"`
+	BaseDN string `json:"baseDn"`
+	// UserIDAttr is "uid" (default) or "cn": which LDAP attribute is the
+	// user's naming/identifier attribute. The SPA hides the separate cn
+	// display field and relabels the identity input when it's "cn", since
+	// the two can't hold different values in that mode (see service.go).
+	UserIDAttr    string `json:"userIdAttr"`
 	PeopleOU      string `json:"peopleOu"`
 	GroupsOU      string `json:"groupsOu"`
 	PrimaryGroup  string `json:"primaryGroup"`
