@@ -27,7 +27,10 @@ identifiers and API are English.
 - **Bulk import.** Upload a CSV, Excel (.xlsx) or Apple Numbers user list, map
   its columns, review/edit every row in the browser, then create the users.
   Files are parsed client-side; missing passwords are generated as memorable
-  German passphrases and offered once as a CSV download (never stored).
+  German passphrases and offered once as a CSV download (never stored). An
+  optional test-user generator (`enable_test_user_generator`, off by default)
+  adds a second entry point that creates a block of synthetic users instead
+  of reading a file — for load-testing/demo data.
 - **Configurable attributes.** `[[user_attr]]` entries in `weft.toml` add
   further single-valued attributes (telephoneNumber, ou, st, …) to the forms,
   the API and the import — e.g. everything a Matrix user-directory sync reads.

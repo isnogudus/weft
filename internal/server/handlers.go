@@ -141,6 +141,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		MaxPwdLength: c.MaxPasswordLength, MailAttr: c.MailAttr, MailAliasAttr: c.MailAliasAttr,
 		SessionTimeoutSeconds: int(c.SessionTimeout.D().Seconds()),
 		UserAttrs:             attrs,
+		TestUserGenerator:     c.TestUserGenerator,
 	})
 }
 

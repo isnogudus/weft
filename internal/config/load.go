@@ -32,6 +32,9 @@ func applyEnv(c *Config) error {
 	envStr("WEFT_BASE_DN", &c.BaseDN)
 	envStr("WEFT_DIRECTORY", &c.Directory)
 	envStr("WEFT_USER_ID_ATTR", &c.UserIDAttr)
+	if err := envBool("WEFT_TEST_USER_GENERATOR", &c.TestUserGenerator); err != nil {
+		return err
+	}
 	envStr("WEFT_ADMIN_UID", &c.AdminUID)
 	envStr("WEFT_ADMIN_DN", &c.AdminDN)
 	if err := envBool("WEFT_ALLOW_ADMIN", &c.AllowAdmin); err != nil {

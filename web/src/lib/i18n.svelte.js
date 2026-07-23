@@ -228,6 +228,18 @@ const en = {
   'pro Seite': 'per page',
   '{total} Benutzer, Seite {page} von {totalPages}': '{total} users, page {page} of {totalPages}',
   'Insgesamt {n} Benutzer': '{n} users in total',
+
+  // Test-user generator (bulk import wizard)
+  'Datei hochladen': 'Upload a file',
+  'Testbenutzer generieren': 'Generate test users',
+  'Erzeugt eine Reihe synthetischer Testbenutzer (z. B. anna_m000, anna_m001, …) mit zufälligen Werten für die konfigurierten Zusatzattribute — nur für Tests/Demos.':
+    'Creates a batch of synthetic test users (e.g. anna_m000, anna_m001, …) with randomised values for the configured extra attributes — for tests/demos only.',
+  'Start': 'Start',
+  'Anzahl': 'Count',
+  'Mail-Domain (optional)': 'Mail domain (optional)',
+  'Generieren und prüfen': 'Generate and review',
+  'Vor- und Nachname für die Testbenutzer sind erforderlich.': 'First and last name are required for the test users.',
+  'Anzahl muss zwischen 1 und 500 liegen.': 'Count must be between 1 and 500.',
 }
 
 const tables = { de: {}, en }

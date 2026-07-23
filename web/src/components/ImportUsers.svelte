@@ -8,6 +8,7 @@
     resolveUids, rowsToFields, toRowPayload, userHasAddress, validateRow,
   } from '../lib/importModel.js'
   import { generatePassword } from '../lib/password-gen.js'
+  import { generateTestUsers } from '../lib/testUserData.js'
 
   let { onClose, onDone } = $props()
 
@@ -18,6 +19,15 @@
   let step = $state('file') // file | map | review | done
   let error = $state('')
   let fileName = $state('')
+
+  // file step: choose between uploading a file and generating synthetic test
+  // users (only offered when config.enable_test_user_generator is set).
+  let entryMode = $state('file') // file | generate
+  let genGivenName = $state('')
+  let genSurname = $state('')
+  let genStart = $state(0)
+  let genCount = $state(20)
+  let genMailDomain = $state('')
 
   // map step
   let rawRows = $state([])
@@ -84,30 +94,68 @@
       error = t('Keine Spalte ist "uid" zugeordnet (oder alternativ Vor- und Nachname).')
       return
     }
-    try {
-      existingUsers = await api.get('/users')
-    } catch (err) {
-      error = err.message
+    const dataRows = rawRows.slice(headerRow + 1)
+    await finalizeRows(rowsToFields(dataRows, mapping))
+  }
+
+  async function generateAndReview() {
+    error = ''
+    if (!genGivenName.trim() || !genSurname.trim()) {
+      error = t('Vor- und Nachname für die Testbenutzer sind erforderlich.')
       return
     }
-    usersByUid = new Map(existingUsers.map((u) => [u.uid, u]))
-    const dataRows = rawRows.slice(headerRow + 1)
-    const fields = rowsToFields(dataRows, mapping)
-    const derivedFlags = fields.map((f) => !f.uid)
-    const resolved = resolveUids(fields, existingUsers)
-    derivedCount = resolved.derived
-    suffixCount = resolved.suffixed
-    rows = await Promise.all(fields.map(async (f, i) => ({
-      index: i,
-      f,
-      derived: derivedFlags[i],
-      password: f.password || await generatePassword(meta?.maxPasswordLength ?? 72),
-      check: null,
-      result: null,
-      attempted: false,
-    })))
-    revalidate()
-    step = 'review'
+    if (!Number.isInteger(genCount) || genCount < 1 || genCount > 500) {
+      error = t('Anzahl muss zwischen 1 und 500 liegen.')
+      return
+    }
+    await finalizeRows(generateTestUsers({
+      givenName: genGivenName.trim(), sn: genSurname.trim(),
+      start: Number(genStart) || 0, count: genCount,
+      mailDomain: genMailDomain.trim(), userAttrs,
+    }))
+  }
+
+  // fetchAllUsers pages through GET /users to collect every existing user --
+  // the import wizard needs the full set for collision detection, unlike the
+  // Users.svelte table view, which intentionally only shows one page.
+  async function fetchAllUsers() {
+    const pageSize = 200
+    let page = 1
+    let all = []
+    for (;;) {
+      const resp = await api.get(`/users?page=${page}&pageSize=${pageSize}`)
+      all = all.concat(resp.users)
+      if (all.length >= resp.total || resp.users.length === 0) break
+      page++
+    }
+    return all
+  }
+
+  // finalizeRows takes fields from either entry mode (parsed file or
+  // generated) and runs the shared uid-collision resolution, password
+  // generation and validation before showing the review table.
+  async function finalizeRows(fields) {
+    try {
+      existingUsers = await fetchAllUsers()
+      usersByUid = new Map(existingUsers.map((u) => [u.uid, u]))
+      const derivedFlags = fields.map((f) => !f.uid)
+      const resolved = resolveUids(fields, existingUsers)
+      derivedCount = resolved.derived
+      suffixCount = resolved.suffixed
+      rows = await Promise.all(fields.map(async (f, i) => ({
+        index: i,
+        f,
+        derived: derivedFlags[i],
+        password: f.password || await generatePassword(meta?.maxPasswordLength ?? 72),
+        check: null,
+        result: null,
+        attempted: false,
+      })))
+      revalidate()
+      step = 'review'
+    } catch (err) {
+      error = err.message || t('Fehlgeschlagen.')
+    }
   }
 
   // reresolve re-runs the uid derivation/collision decision after an edit that
@@ -194,13 +242,20 @@
     onClose()
   }
 
+  // A column is shown either because a file column was mapped to it, or
+  // (for generated rows, which have no mapping) some row actually carries a
+  // value for it -- otherwise generated extra attributes would be invisible
+  // and uneditable in the review table.
+  const hasValue = (get) => rows.some((r) => get(r.f))
   const shownTargets = $derived([
     'uid', 'givenName', 'sn',
     ...(mapping.includes('cn') ? ['cn'] : []),
     ...(mapping.includes('displayName') ? ['displayName'] : []),
-    ...(mapping.includes('mail') || mapping.includes('aliases') ? ['mail'] : []),
+    ...(mapping.includes('mail') || mapping.includes('aliases') || hasValue((f) => f.mail) ? ['mail'] : []),
     ...(withPosix && mapping.includes('uidNumber') ? ['uidNumber'] : []),
-    ...userAttrs.filter((a) => mapping.includes('extra:' + a.attr)).map((a) => 'extra:' + a.attr),
+    ...userAttrs
+      .filter((a) => mapping.includes('extra:' + a.attr) || hasValue((f) => f.extra?.[a.attr]))
+      .map((a) => 'extra:' + a.attr),
     'password',
   ])
   function targetHeading(tgt) {
@@ -268,8 +323,31 @@
     <h2>{t('Benutzer importieren')}</h2>
 
     {#if step === 'file'}
-      <p class="muted">{t('CSV-, Excel- (.xlsx) oder Numbers-Datei wählen. Die Datei wird im Browser gelesen; erst der Import überträgt Daten.')}</p>
-      <input type="file" accept=".csv,.xlsx,.numbers" onchange={pickFile} />
+      {#if meta?.testUserGenerator}
+        <div class="row" style="margin-bottom:0.8rem">
+          <button class:active={entryMode === 'file'} onclick={() => (entryMode = 'file')}>{t('Datei hochladen')}</button>
+          <button class:active={entryMode === 'generate'} onclick={() => (entryMode = 'generate')}>{t('Testbenutzer generieren')}</button>
+        </div>
+      {/if}
+      {#if entryMode === 'generate'}
+        <p class="muted">{t('Erzeugt eine Reihe synthetischer Testbenutzer (z. B. anna_m000, anna_m001, …) mit zufälligen Werten für die konfigurierten Zusatzattribute — nur für Tests/Demos.')}</p>
+        <div class="row" style="flex-wrap:wrap">
+          <label style="flex:1"><span>{t('Vorname (givenName)')}</span><input bind:value={genGivenName} /></label>
+          <label style="flex:1"><span>{t('Nachname (sn) *')}</span><input bind:value={genSurname} /></label>
+        </div>
+        <div class="row" style="flex-wrap:wrap; align-items:flex-end">
+          <label style="max-width:8ch"><span>{t('Start')}</span><input type="number" min="0" bind:value={genStart} /></label>
+          <label style="max-width:8ch"><span>{t('Anzahl')}</span><input type="number" min="1" max="500" bind:value={genCount} /></label>
+          <label style="flex:1"><span>{t('Mail-Domain (optional)')}</span><input bind:value={genMailDomain} placeholder="beispiel.de" /></label>
+        </div>
+        {#if error}<p class="error">{error}</p>{/if}
+        <div class="row" style="justify-content:flex-end">
+          <button class="primary" onclick={generateAndReview}>{t('Generieren und prüfen')}</button>
+        </div>
+      {:else}
+        <p class="muted">{t('CSV-, Excel- (.xlsx) oder Numbers-Datei wählen. Die Datei wird im Browser gelesen; erst der Import überträgt Daten.')}</p>
+        <input type="file" accept=".csv,.xlsx,.numbers" onchange={pickFile} />
+      {/if}
     {:else if step === 'map'}
       <p class="muted">{fileName} — {t('{n} Zeilen', { n: rawRows.length - headerRow - 1 })}</p>
       <div class="row" style="align-items:flex-end; flex-wrap:wrap">

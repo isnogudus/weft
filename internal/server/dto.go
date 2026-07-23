@@ -230,6 +230,9 @@ type metaDTO struct {
 	// UserAttrs describes the configured extra attributes so the SPA can
 	// render their form fields generically.
 	UserAttrs []userAttrDTO `json:"userAttrs"`
+	// TestUserGenerator gates the "generate test users" option in the bulk
+	// import wizard (config: enable_test_user_generator).
+	TestUserGenerator bool `json:"testUserGenerator"`
 }
 
 type userAttrDTO struct {

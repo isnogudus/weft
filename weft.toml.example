@@ -135,6 +135,15 @@ admin_uid = "admin"
 # label_de = "Externe Sichtbarkeit"
 # label_en = "External visibility"
 
+# Adds a "generate test users" option to the bulk import wizard: given a
+# first/last name and a count, it creates a block of synthetic users
+# (e.g. anna_m000, anna_m001, ...) with randomised values for whichever of
+# the extra attributes above are configured (st, l, o, ou, departmentNumber,
+# title, telephoneNumber). For load-testing/demo data only -- off by default,
+# since bulk account creation deserves an explicit opt-in even though it
+# grants no capability an admin doesn't already have via the regular import.
+# enable_test_user_generator = false
+
 # --- Password hashing (bcrypt -> {CRYPT}) ---
 # bcrypt_cost         = 12
 # max_password_length = 72       # bcrypt truncates beyond 72 bytes

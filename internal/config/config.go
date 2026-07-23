@@ -104,6 +104,15 @@ type Config struct {
 	UserAttrs        []UserAttr `toml:"user_attr"`
 	UserExtraClasses []string   `toml:"user_extra_classes"`
 
+	// TestUserGenerator shows a "generate test users" option in the bulk
+	// import wizard: given a first/last name and a count, it creates a block
+	// of synthetic users (name_a000, name_a001, ...) with randomised values
+	// for whichever extra attributes are configured, for load-testing or demo
+	// data. Off by default -- this is a convenience for admins who already
+	// have that access, not a new capability, but its blast radius (bulk
+	// account creation) warrants an explicit opt-in.
+	TestUserGenerator bool `toml:"enable_test_user_generator"`
+
 	// Password hashing.
 	BcryptCost        int `toml:"bcrypt_cost"`
 	MaxPasswordLength int `toml:"max_password_length"` // bcrypt truncates at 72 bytes
