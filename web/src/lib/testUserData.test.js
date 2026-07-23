@@ -46,4 +46,14 @@ describe('generateTestUsers', () => {
     expect(rows).toHaveLength(50)
     expect(new Set(rows.map((r) => r.uid)).size).toBe(50)
   })
+
+  it('leaves password blank by default, so each row gets its own passphrase later', () => {
+    const rows = generateTestUsers({ givenName: 'Anna', sn: 'Müller', count: 3 })
+    expect(rows.every((r) => r.password === '')).toBe(true)
+  })
+
+  it('applies a uniform password to every row when given', () => {
+    const rows = generateTestUsers({ givenName: 'Anna', sn: 'Müller', count: 3, password: 'einheitlich-123' })
+    expect(rows.every((r) => r.password === 'einheitlich-123')).toBe(true)
+  })
 })

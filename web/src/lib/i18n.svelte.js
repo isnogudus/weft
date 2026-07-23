@@ -240,6 +240,8 @@ const en = {
   'Generieren und prüfen': 'Generate and review',
   'Vor- und Nachname für die Testbenutzer sind erforderlich.': 'First and last name are required for the test users.',
   'Anzahl muss zwischen 1 und 500 liegen.': 'Count must be between 1 and 500.',
+  'Einheitliches Passwort für alle Testbenutzer verwenden': 'Use one password for all test users',
+  'Bitte ein einheitliches Passwort eingeben oder eines vorschlagen lassen.': 'Please enter a shared password, or generate a suggestion.',
 }
 
 const tables = { de: {}, en }

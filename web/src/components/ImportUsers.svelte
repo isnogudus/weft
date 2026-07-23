@@ -4,7 +4,7 @@
   import { t, i18n } from '../lib/i18n.svelte.js'
   import { parseCSV, toCSV } from '../lib/csv.js'
   import {
-    CORE_TARGETS, autoMap, buildContext, detectHeaderRow,
+    CORE_TARGETS, autoMap, buildContext, byteLen, detectHeaderRow,
     resolveUids, rowsToFields, toRowPayload, userHasAddress, validateRow,
   } from '../lib/importModel.js'
   import { generatePassword } from '../lib/password-gen.js'
@@ -28,6 +28,8 @@
   let genStart = $state(0)
   let genCount = $state(20)
   let genMailDomain = $state('')
+  let genUniformPassword = $state(false)
+  let genPassword = $state('')
 
   // map step
   let rawRows = $state([])
@@ -108,10 +110,22 @@
       error = t('Anzahl muss zwischen 1 und 500 liegen.')
       return
     }
+    let password = ''
+    if (genUniformPassword) {
+      if (!genPassword) {
+        error = t('Bitte ein einheitliches Passwort eingeben oder eines vorschlagen lassen.')
+        return
+      }
+      if (byteLen(genPassword) > (meta?.maxPasswordLength ?? 72)) {
+        error = t('Passwort: höchstens {n} Zeichen.', { n: meta?.maxPasswordLength ?? 72 })
+        return
+      }
+      password = genPassword
+    }
     await finalizeRows(generateTestUsers({
       givenName: genGivenName.trim(), sn: genSurname.trim(),
       start: Number(genStart) || 0, count: genCount,
-      mailDomain: genMailDomain.trim(), userAttrs,
+      mailDomain: genMailDomain.trim(), password, userAttrs,
     }))
   }
 
@@ -340,6 +354,15 @@
           <label style="max-width:8ch"><span>{t('Anzahl')}</span><input type="number" min="1" max="500" bind:value={genCount} /></label>
           <label style="flex:1"><span>{t('Mail-Domain (optional)')}</span><input bind:value={genMailDomain} placeholder="beispiel.de" /></label>
         </div>
+        <label style="margin:0 0 0.6rem"><input type="checkbox" bind:checked={genUniformPassword} style="width:auto" /> {t('Einheitliches Passwort für alle Testbenutzer verwenden')}</label>
+        {#if genUniformPassword}
+          <label><span>{t('Passwort')}</span>
+            <span class="row" style="gap:0.4rem">
+              <input type="text" bind:value={genPassword} style="flex:1" />
+              <button type="button" onclick={async () => (genPassword = await generatePassword(meta?.maxPasswordLength ?? 72))} title={t('Passphrase vorschlagen')}>{t('Vorschlagen')}</button>
+            </span>
+          </label>
+        {/if}
         {#if error}<p class="error">{error}</p>{/if}
         <div class="row" style="justify-content:flex-end">
           <button class="primary" onclick={generateAndReview}>{t('Generieren und prüfen')}</button>
