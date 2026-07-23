@@ -13,6 +13,14 @@
   let loading = $state(true)
   let error = $state('')
 
+  let page = $state(1)
+  let pageSize = $state(25)
+  let total = $state(0)
+  const totalPages = $derived(Math.max(1, Math.ceil(total / pageSize)))
+  // Unfiltered count of every user in the directory, independent of the
+  // search term (which narrows `total` above to just the matches).
+  let grandTotal = $state(0)
+
   let editing = $state(null)   // user object or {} for new
   let detail = $state(null)    // user object (read-only view)
   let resetting = $state(null) // uid
@@ -26,7 +34,17 @@
     loading = true
     error = ''
     try {
-      users = await api.get('/users' + (term ? '?q=' + encodeURIComponent(term) : ''))
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+      if (term) params.set('q', term)
+      const resp = await api.get('/users?' + params)
+      users = resp.users
+      total = resp.total
+      // The requested page can end up past the last one (e.g. after a delete
+      // shrinks the result set) -- step back rather than show a blank table.
+      if (users.length === 0 && page > 1 && total > 0) {
+        page = Math.max(1, Math.ceil(total / pageSize))
+        return load()
+      }
     } catch (e) {
       error = e.message
     } finally {
@@ -34,19 +52,31 @@
     }
   }
 
+  function search() { page = 1; load() }
+  function goToPage(n) { page = Math.min(Math.max(1, n), totalPages); load() }
+  function changePageSize(n) { pageSize = n; page = 1; load() }
+
+  // Independent of the (possibly search-filtered) paginated list; refreshed
+  // whenever the user count could have changed.
+  async function loadGrandTotal() {
+    try { grandTotal = (await api.get('/users?pageSize=1')).total }
+    catch { /* shown total just stays stale; the main list surfaces errors */ }
+  }
+
   async function remove(u) {
     if (!confirm(t('Benutzer "{uid}" wirklich löschen?', { uid: u.uid }))) return
-    try { await api.del('/users/' + u.uid); await load() }
+    try { await api.del('/users/' + u.uid); await load(); await loadGrandTotal() }
     catch (e) { error = e.message }
   }
 
-  function onSaved() { editing = null; load() }
+  function onSaved() { editing = null; load(); loadGrandTotal() }
 
-  $effect(() => { load() })
+  $effect(() => { load(); loadGrandTotal() })
 </script>
 
+<p class="muted" style="margin:0 0 0.5rem">{t('Insgesamt {n} Benutzer', { n: grandTotal })}</p>
 <div class="spread" style="margin-bottom:1rem">
-  <input placeholder={t('Suche (uid, Name) …')} bind:value={term} onkeydown={(e) => e.key === 'Enter' && load()} style="max-width:280px" />
+  <input placeholder={t('Suche (uid, Name) …')} bind:value={term} onkeydown={(e) => e.key === 'Enter' && search()} style="max-width:280px" />
   <div class="row">
     <button onclick={() => (importing = true)}>{t('Importieren')}</button>
     <button class="primary" onclick={() => (editing = {})}>{t('Neuer Benutzer')}</button>
@@ -86,6 +116,21 @@
         {/each}
       </tbody>
     </table>
+    <div class="spread" style="margin-top:0.8rem">
+      <span class="muted">{t('{total} Benutzer, Seite {page} von {totalPages}', { total, page, totalPages })}</span>
+      <div class="row">
+        <label style="margin:0" class="row">
+          <span class="muted" style="margin:0">{t('pro Seite')}</span>
+          <select value={pageSize} onchange={(e) => changePageSize(Number(e.target.value))}>
+            {#each [25, 50, 100] as n (n)}<option value={n}>{n}</option>{/each}
+          </select>
+        </label>
+        <button onclick={() => goToPage(1)} disabled={page <= 1}>«</button>
+        <button onclick={() => goToPage(page - 1)} disabled={page <= 1}>{t('Zurück')}</button>
+        <button onclick={() => goToPage(page + 1)} disabled={page >= totalPages}>{t('Weiter')}</button>
+        <button onclick={() => goToPage(totalPages)} disabled={page >= totalPages}>»</button>
+      </div>
+    </div>
   {/if}
 </div>
 
@@ -105,5 +150,5 @@
   <UserGroups uid={viewing} onClose={() => (viewing = null)} />
 {/if}
 {#if importing}
-  <ImportUsers onClose={() => (importing = false)} onDone={() => load()} />
+  <ImportUsers onClose={() => (importing = false)} onDone={() => { load(); loadGrandTotal() }} />
 {/if}

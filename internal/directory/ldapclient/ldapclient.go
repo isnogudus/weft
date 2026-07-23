@@ -30,6 +30,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -275,6 +276,10 @@ func (c *conn) ListUsers(_ context.Context, term string) ([]directory.User, erro
 	for _, e := range res.Entries {
 		out = append(out, *c.parseUser(e))
 	}
+	// LDAP servers return entries in no particular order; a stable sort here
+	// is what makes server-side pagination (see handleListUsers) meaningful --
+	// the fake directory already sorts the same way.
+	sort.Slice(out, func(i, j int) bool { return out[i].UID < out[j].UID })
 	return out, nil
 }
 

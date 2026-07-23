@@ -70,6 +70,17 @@ func toUserDTOs(us []directory.User) []userDTO {
 	return out
 }
 
+// userListDTO is the paginated /users response: the directory is searched in
+// full server-side (LDAP has no offset-based pagination), but only the
+// requested page is sent to the browser, alongside enough metadata to render
+// page controls without a second round-trip.
+type userListDTO struct {
+	Users    []userDTO `json:"users"`
+	Total    int       `json:"total"`
+	Page     int       `json:"page"`
+	PageSize int       `json:"pageSize"`
+}
+
 func toGroupDTO(g *directory.Group) groupDTO {
 	m := g.MemberUID
 	if m == nil {

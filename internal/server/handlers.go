@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -228,16 +229,60 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 
 // --- users ---
 
+// defaultUserPageSize / maxUserPageSize / minUserPageSize bound the "pageSize"
+// query param on GET /users.
+const (
+	defaultUserPageSize = 25
+	minUserPageSize     = 1
+	maxUserPageSize     = 200
+)
+
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	term := r.URL.Query().Get("q")
+	page := queryInt(r, "page", 1, 1, 1<<30)
+	pageSize := queryInt(r, "pageSize", defaultUserPageSize, minUserPageSize, maxUserPageSize)
 	s.withConn(w, r, func(c directory.Conn) {
+		// LDAP has no offset-based pagination (see ldapclient.ListUsers): the
+		// full (term-filtered) result set is fetched and sorted server-side as
+		// today, and only the requested page is serialised to the client.
 		us, err := c.ListUsers(r.Context(), term)
 		if err != nil {
 			writeDirError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, toUserDTOs(us))
+		total := len(us)
+		start := (page - 1) * pageSize
+		if start > total {
+			start = total
+		}
+		end := start + pageSize
+		if end > total {
+			end = total
+		}
+		writeJSON(w, http.StatusOK, userListDTO{
+			Users: toUserDTOs(us[start:end]), Total: total, Page: page, PageSize: pageSize,
+		})
 	})
+}
+
+// queryInt parses an integer query param, clamped to [min, max]; an absent or
+// invalid value falls back to def.
+func queryInt(r *http.Request, key string, def, min, max int) int {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	if n < min {
+		return min
+	}
+	if n > max {
+		return max
+	}
+	return n
 }
 
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {

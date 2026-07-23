@@ -413,6 +413,12 @@ POST /groups/{cn}/members     DELETE /groups/{cn}/members/{uid}
 `/users*` and `/groups*` are admin-only; `/me*` is available to every
 authenticated user.
 
+`GET /users` supports `q` (search term), `page` (1-based, default 1) and
+`pageSize` (default 25, max 200), returning `{ users, total, page, pageSize }`.
+LDAP has no offset-based pagination, so the term-filtered result set is
+fetched and sorted in full on every request; only the requested page is sent
+to the browser (see `internal/directory/ldapclient.ListUsers`).
+
 ## Project layout
 
 ```

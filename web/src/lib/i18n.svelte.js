@@ -222,6 +222,12 @@ const en = {
   'doppelt in der Datei': 'duplicate in the file',
   'bereits vergeben': 'already taken',
   'Pflichtfeld': 'required',
+
+  // Pagination (Users list)
+  'Weiter': 'Next',
+  'pro Seite': 'per page',
+  '{total} Benutzer, Seite {page} von {totalPages}': '{total} users, page {page} of {totalPages}',
+  'Insgesamt {n} Benutzer': '{n} users in total',
 }
 
 const tables = { de: {}, en }

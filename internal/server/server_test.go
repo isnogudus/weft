@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -186,6 +187,76 @@ func TestMetaExposesSessionTimeout(t *testing.T) {
 	}
 	if m.UserIDAttr != "uid" {
 		t.Fatalf("meta userIdAttr = %q, want default uid", m.UserIDAttr)
+	}
+}
+
+func TestListUsersPagination(t *testing.T) {
+	ts := testServer(t)
+	admin := newClient(t, ts.URL)
+	admin.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"})
+	admin.login("admin", "rootpw")
+
+	// Names chosen so lexicographic uid order is "alice0".."alice9", "alice10"..
+	// is avoided -- pad so the expected order is unambiguous.
+	for i := 0; i < 23; i++ {
+		uid := fmt.Sprintf("alice%02d", i)
+		resp, b := admin.do(http.MethodPost, "/api/users", createUserReq{
+			UID: uid, CN: uid, SN: "A", Password: "longpassword12",
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create %s: %d %s", uid, resp.StatusCode, b)
+		}
+	}
+
+	// Default page size (25) with only 23 users: one page holds everything.
+	_, b := admin.do(http.MethodGet, "/api/users", nil)
+	var all userListDTO
+	if err := json.Unmarshal(b, &all); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, b)
+	}
+	if all.Total != 23 || len(all.Users) != 23 || all.Page != 1 || all.PageSize != 25 {
+		t.Fatalf("unpaged listing = %+v", all)
+	}
+	if all.Users[0].UID != "alice00" || all.Users[22].UID != "alice22" {
+		t.Fatalf("sort order wrong: first=%q last=%q", all.Users[0].UID, all.Users[22].UID)
+	}
+
+	// pageSize=10: 3 pages, last one partial.
+	_, b = admin.do(http.MethodGet, "/api/users?pageSize=10", nil)
+	var p1 userListDTO
+	_ = json.Unmarshal(b, &p1)
+	if p1.Total != 23 || len(p1.Users) != 10 || p1.Users[0].UID != "alice00" || p1.Users[9].UID != "alice09" {
+		t.Fatalf("page 1: %+v", p1)
+	}
+
+	_, b = admin.do(http.MethodGet, "/api/users?pageSize=10&page=2", nil)
+	var p2 userListDTO
+	_ = json.Unmarshal(b, &p2)
+	if len(p2.Users) != 10 || p2.Users[0].UID != "alice10" || p2.Users[9].UID != "alice19" {
+		t.Fatalf("page 2: %+v", p2)
+	}
+
+	_, b = admin.do(http.MethodGet, "/api/users?pageSize=10&page=3", nil)
+	var p3 userListDTO
+	_ = json.Unmarshal(b, &p3)
+	if len(p3.Users) != 3 || p3.Users[0].UID != "alice20" || p3.Users[2].UID != "alice22" {
+		t.Fatalf("page 3 (partial): %+v", p3)
+	}
+
+	// Past the last page: empty, not an error.
+	_, b = admin.do(http.MethodGet, "/api/users?pageSize=10&page=4", nil)
+	var p4 userListDTO
+	_ = json.Unmarshal(b, &p4)
+	if len(p4.Users) != 0 || p4.Total != 23 {
+		t.Fatalf("page past the end: %+v", p4)
+	}
+
+	// pageSize is clamped, not rejected.
+	_, b = admin.do(http.MethodGet, "/api/users?pageSize=100000", nil)
+	var clamped userListDTO
+	_ = json.Unmarshal(b, &clamped)
+	if clamped.PageSize != maxUserPageSize {
+		t.Fatalf("pageSize not clamped: %+v", clamped)
 	}
 }
 
