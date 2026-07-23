@@ -254,9 +254,17 @@ without an env equivalent (e.g. the `[[user_attr]]` tables). Started as root,
 the privsep worker chroots to `/var/empty` and drops to `_weft` as usual; run
 the container with a non-root user to skip chroot/privdrop.
 
-[`compose.yaml`](compose.yaml) covers three ways to run weft; profiles only
-*add* services, so pass the explicit names shown below (otherwise the default
-`weft` service also starts and tries to reach networks you may not have):
+[`compose.yml.example`](compose.yml.example) covers three ways to run weft;
+copy it to `compose.yaml` first (that copy is gitignored, like `weft.toml`, so
+your real network names never land in the repo):
+
+```sh
+cp compose.yml.example compose.yaml
+```
+
+Profiles only *add* services, so pass the explicit names shown below
+(otherwise the default `weft` service also starts and tries to reach networks
+you may not have):
 
 - **Your own LDAP infrastructure** (the default `weft` service, no profile):
   configure `./weft.toml` with your real `ldap_url`, `base_dn`, `admin_dn` and

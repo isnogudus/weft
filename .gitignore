@@ -11,6 +11,8 @@
 # Local config / secrets
 /weft.toml
 *.local.toml
+/compose.yaml
+/compose.yml
 
 # Editor / OS / tooling
 .DS_Store

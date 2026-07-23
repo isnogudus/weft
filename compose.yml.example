@@ -1,4 +1,8 @@
-# weft -- Docker Compose examples.
+# weft -- Docker Compose examples. Copy to compose.yaml (or compose.yml) and
+# adjust -- that copy is gitignored, so your real network names, mounted
+# config path, etc. never land in the repo:
+#
+#   cp compose.yml.example compose.yaml
 #
 # 1) Point weft at LDAP infrastructure you already run (the default `weft`
 #    service, no profile needed). Configure ./weft.toml with your real

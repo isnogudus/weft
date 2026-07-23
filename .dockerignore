@@ -11,3 +11,5 @@ weft.openbsd-amd64
 weft.toml
 Dockerfile
 compose.yaml
+compose.yml
+compose.yml.example
