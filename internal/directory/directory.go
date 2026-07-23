@@ -1,6 +1,6 @@
 // Package directory abstracts the external LDAP server behind an interface so
-// that ldapd-specific behaviour is isolated, the application logic is testable
-// against a Fake, and a different target (e.g. OpenLDAP) could be added later.
+// that server-specific behaviour (ldapd vs OpenLDAP) is isolated and the
+// application logic is testable against a Fake.
 //
 // Authorization is performed by the directory server, not by this package: each
 // weft session holds one Conn bound as the logged-in identity (passthrough
@@ -72,9 +72,10 @@ type Conn interface {
 	// hashes on write and never reads the hash back.
 	SetPassword(ctx context.Context, uid, hashedPassword string) error
 
-	// RenameUID changes a user's uid. Because ldapd does not implement ModifyDN,
-	// implementations perform add-new -> fixup memberUid in all supplementary
-	// groups -> delete-old. Not atomic; see README.
+	// RenameUID changes a user's uid. OpenLDAP renames via ModifyDN (atomic for
+	// the entry); ldapd has no ModifyDN, so there the implementation performs
+	// add-new -> fixup memberUid in all supplementary groups -> delete-old (not
+	// atomic; see README). Both fix up memberUid afterwards.
 	RenameUID(ctx context.Context, oldUID, newUID string) error
 
 	// CreateBaseDN creates the base/suffix entry itself (e.g. dc=example,dc=org).

@@ -5,6 +5,7 @@
   import UserDetail from './UserDetail.svelte'
   import ResetPassword from './ResetPassword.svelte'
   import UserGroups from './UserGroups.svelte'
+  import ImportUsers from './ImportUsers.svelte'
 
   let users = $state([])
   let term = $state('')
@@ -15,6 +16,7 @@
   let detail = $state(null)    // user object (read-only view)
   let resetting = $state(null) // uid
   let viewing = $state(null)   // uid (groups modal)
+  let importing = $state(false)
 
   async function load() {
     loading = true
@@ -41,7 +43,10 @@
 
 <div class="spread" style="margin-bottom:1rem">
   <input placeholder={t('Suche (uid, Name) …')} bind:value={term} onkeydown={(e) => e.key === 'Enter' && load()} style="max-width:280px" />
-  <button class="primary" onclick={() => (editing = {})}>{t('Neuer Benutzer')}</button>
+  <div class="row">
+    <button onclick={() => (importing = true)}>{t('Importieren')}</button>
+    <button class="primary" onclick={() => (editing = {})}>{t('Neuer Benutzer')}</button>
+  </div>
 </div>
 
 {#if error}<p class="error">{error}</p>{/if}
@@ -94,4 +99,7 @@
 {/if}
 {#if viewing}
   <UserGroups uid={viewing} onClose={() => (viewing = null)} />
+{/if}
+{#if importing}
+  <ImportUsers onClose={() => (importing = false)} onDone={() => load()} />
 {/if}

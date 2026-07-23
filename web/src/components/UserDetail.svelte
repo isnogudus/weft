@@ -1,9 +1,12 @@
 <script>
   import { api } from '../lib/api.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { app } from '../lib/store.svelte.js'
+  import { t, i18n } from '../lib/i18n.svelte.js'
 
   let { user, onClose, onEdit } = $props()
   let groups = $state([])
+  const userAttrs = app.meta?.userAttrs || []
+  const attrLabel = (a) => (i18n.lang === 'de' ? a.labelDe : a.labelEn) || a.attr
 
   $effect(() => {
     api.get(`/users/${user.uid}/groups`).then((g) => (groups = g)).catch(() => {})
@@ -39,6 +42,11 @@
               <tr><th>{t('Mail-Aliase')}</th><td>{user.mail.aliases.join(', ')}</td></tr>
             {/if}
           {/if}
+          {#each userAttrs as a (a.attr)}
+            {#if user.extra?.[a.attr]}
+              <tr><th>{attrLabel(a)}</th><td>{user.extra[a.attr]}</td></tr>
+            {/if}
+          {/each}
         </tbody>
       </table>
     </div>

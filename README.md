@@ -5,7 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A small, opinionated web UI to administer users and groups in an **existing,
-external LDAP server** — primarily OpenBSD [`ldapd(8)`](https://man.openbsd.org/ldapd.8).
+external LDAP server** — OpenBSD [`ldapd(8)`](https://man.openbsd.org/ldapd.8)
+(the original target) or **OpenLDAP** (`directory = "openldap"`).
 weft does *not* embed a directory; it is a thin, single-binary admin front-end
 that authenticates **through the LDAP itself** (passthrough bind).
 
@@ -23,6 +24,13 @@ identifiers and API are English.
   only), a shared default primary group, bcrypt `{CRYPT}` passwords.
 - **Bilingual UI.** German/English, toggled in the header (DE/EN) and remembered
   per browser; defaults to the browser language.
+- **Bulk import.** Upload a CSV, Excel (.xlsx) or Apple Numbers user list, map
+  its columns, review/edit every row in the browser, then create the users.
+  Files are parsed client-side; missing passwords are generated as memorable
+  German passphrases and offered once as a CSV download (never stored).
+- **Configurable attributes.** `[[user_attr]]` entries in `weft.toml` add
+  further single-valued attributes (telephoneNumber, ou, st, …) to the forms,
+  the API and the import — e.g. everything a Matrix user-directory sync reads.
 - **Process sandboxing.** After reading its files, when started as root weft
   `chroot(2)`s and drops privileges to `_weft` (Linux, macOS, FreeBSD, the BSDs);
   on OpenBSD it additionally applies `pledge(2)`/`unveil(2)`.
@@ -43,7 +51,48 @@ ldapd can enforce honestly:
 - **Everyone else = self-service only.** They may view their own profile/groups
   and change their own password (`by self` write, restricted to `userPassword`).
 
-If you need multiple delegated admins or group-based ACLs, use OpenLDAP instead.
+weft applies the **same model to OpenLDAP**: one admin DN (the `rootdn`),
+self-service for everyone else. OpenLDAP could express more (group-based ACLs,
+delegated admins), but weft deliberately keeps one authorization model across
+both servers.
+
+## OpenLDAP
+
+Set the flavor and, typically, the rootdn shape:
+
+```toml
+directory = "openldap"
+admin_dn  = "cn=admin,dc=example,dc=org"   # must equal olcRootDN
+```
+
+Differences from ldapd that weft handles for you:
+
+| | ldapd | OpenLDAP |
+|---|---|---|
+| uid rename | add-new → fixup `memberUid` → delete-old (not atomic) | **ModifyDN** (atomic for the entry) → fixup `memberUid` |
+| suffix entry | created by the setup wizard | usually pre-created; the wizard tolerates “already exists” |
+| rootdn | `rootdn`/`rootpw` in `ldapd.conf` | `olcRootDN`/`olcRootPW` in `cn=config` |
+
+The passwords weft writes (`{CRYPT}$2b$…` = bcrypt) verify on bind if slapd's
+libcrypt supports bcrypt (standard on OpenBSD; on most Linux distributions
+glibc's crypt supports `$2b$`; verify with a test bind).
+
+ACLs matching the weft model (`olcAccess` on the database, order matters):
+
+```
+olcAccess: {0}to attrs=userPassword
+  by self =w
+  by anonymous auth
+  by * none
+olcAccess: {1}to *
+  by self read
+  by users read
+  by * none
+```
+
+The rootdn bypasses ACLs and needs no rule. `{1}` grants authenticated users
+read (needed for the UI's own-profile and group views); tighten `by users read`
+to `by self read` if users must not see each other.
 
 ## Directory layout weft manages
 
@@ -314,7 +363,7 @@ authenticated user.
 cmd/weft            main: flags, config, wiring, HTTP server
 internal/config     TOML + env + flags, defaults, DN templates
 internal/directory  the Directory/Conn abstraction + sentinel errors
-  ├── ldapd         go-ldap/v3 implementation against ldapd
+  ├── ldapclient    go-ldap/v3 implementation (flavors: ldapd, openldap)
   └── fake          in-memory implementation for tests and -dev
 internal/idalloc    pure next-free-number allocation
 internal/password   bcrypt -> {CRYPT}

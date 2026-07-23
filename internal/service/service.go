@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"weft/internal/config"
@@ -49,6 +50,9 @@ type NewUser struct {
 	Password    string
 	POSIX       *POSIXInput
 	Mail        *directory.MailProfile
+	// Extra holds values for the configured extra attributes (config.UserAttrs),
+	// keyed by LDAP attribute name. Unknown keys are rejected.
+	Extra map[string]string
 }
 
 // CreateUser validates input, allocates POSIX ids if needed, hashes the
@@ -64,6 +68,10 @@ func (s *Service) CreateUser(ctx context.Context, c directory.Conn, in NewUser) 
 	if err := validText("sn", in.SN); err != nil {
 		return nil, err
 	}
+	extra, err := s.normalizeExtra(in.Extra)
+	if err != nil {
+		return nil, err
+	}
 	hash, err := password.Hash(in.Password, s.cfg.BcryptCost)
 	if err != nil {
 		return nil, err
@@ -76,6 +84,7 @@ func (s *Service) CreateUser(ctx context.Context, c directory.Conn, in NewUser) 
 		GivenName:   in.GivenName,
 		DisplayName: in.DisplayName,
 		Mail:        normalizeMail(in.Mail),
+		Extra:       extra,
 	}
 
 	if in.POSIX != nil {
@@ -153,6 +162,10 @@ func (s *Service) UpdateUser(ctx context.Context, c directory.Conn, in NewUser) 
 	if err := validText("sn", in.SN); err != nil {
 		return nil, err
 	}
+	extra, err := s.normalizeExtra(in.Extra)
+	if err != nil {
+		return nil, err
+	}
 	cur, err := c.GetUser(ctx, in.UID)
 	if err != nil {
 		return nil, err
@@ -164,6 +177,7 @@ func (s *Service) UpdateUser(ctx context.Context, c directory.Conn, in NewUser) 
 		GivenName:   in.GivenName,
 		DisplayName: in.DisplayName,
 		Mail:        normalizeMail(in.Mail),
+		Extra:       extra,
 	}
 	if in.POSIX != nil {
 		s.allocMu.Lock()
@@ -214,6 +228,36 @@ func (s *Service) CreateGroup(ctx context.Context, c directory.Conn, cn string, 
 		return nil, err
 	}
 	return &g, nil
+}
+
+// normalizeExtra validates the extra-attribute values against the configured
+// [[user_attr]] definitions: unknown keys are rejected, required attributes
+// must be present, values are trimmed and checked for control characters.
+// Empty values are dropped (the directory layer clears the attribute).
+func (s *Service) normalizeExtra(in map[string]string) (map[string]string, error) {
+	for k := range in {
+		if _, ok := s.cfg.UserAttrByName(k); !ok {
+			return nil, fmt.Errorf("unknown extra attribute %q", k)
+		}
+	}
+	out := make(map[string]string, len(in))
+	for _, a := range s.cfg.UserAttrs {
+		v := strings.TrimSpace(in[a.Attr])
+		if v == "" {
+			if a.Required {
+				return nil, fmt.Errorf("%s must not be empty", a.Attr)
+			}
+			continue
+		}
+		if err := validText(a.Attr, v); err != nil {
+			return nil, err
+		}
+		out[a.Attr] = v
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // normalizeMail drops a nil/empty mail profile.

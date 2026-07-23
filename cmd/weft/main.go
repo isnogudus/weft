@@ -1,6 +1,6 @@
 // Command weft is a single-binary web UI to administer users and groups in an
-// external LDAP server (target: OpenBSD ldapd). It serves the embedded SPA and
-// a JSON API; authentication is passthrough bind against the directory.
+// external LDAP server (OpenBSD ldapd or OpenLDAP). It serves the embedded SPA
+// and a JSON API; authentication is passthrough bind against the directory.
 package main
 
 import (
@@ -24,7 +24,7 @@ import (
 	"weft/internal/config"
 	"weft/internal/directory"
 	"weft/internal/directory/fake"
-	"weft/internal/directory/ldapd"
+	"weft/internal/directory/ldapclient"
 	"weft/internal/privsep"
 	"weft/internal/sandbox"
 	"weft/internal/server"
@@ -101,7 +101,7 @@ func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) erro
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
-		d, err := ldapd.New(cfg, nil) // default network dialer; reads CA/system roots now
+		d, err := ldapclient.New(cfg, nil) // default network dialer; reads CA/system roots now
 		if err != nil {
 			return err
 		}
@@ -176,7 +176,7 @@ func runWorker(cfg config.Config, assets fs.FS) error {
 	if err != nil {
 		return err
 	}
-	dir, err := ldapd.New(cfg, w.DialLDAP) // warms the TLS trust store in this process
+	dir, err := ldapclient.New(cfg, w.DialLDAP) // warms the TLS trust store in this process
 	if err != nil {
 		return err
 	}
@@ -316,14 +316,14 @@ func serveAndWait(httpSrv *http.Server, ln net.Listener, addr string, stopC <-ch
 // warnings (suppressed for the local ldapi socket).
 func logStartup(cfg config.Config) {
 	if cfg.IsLDAPI() {
-		log.Printf("LDAP server: %s (local unix socket, secured by file permissions; tls_mode/allow_plain_bind ignored), base_dn=%q",
-			cfg.LDAPURL, cfg.BaseDN)
+		log.Printf("LDAP server: %s (%s; local unix socket, secured by file permissions; tls_mode/allow_plain_bind ignored), base_dn=%q",
+			cfg.LDAPURL, cfg.Directory, cfg.BaseDN)
 	} else {
-		log.Printf("LDAP server: %s (tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.TLSMode, cfg.BaseDN)
+		log.Printf("LDAP server: %s (%s, tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.Directory, cfg.TLSMode, cfg.BaseDN)
 	}
 	if cfg.AllowAdmin {
-		log.Printf("admin login: ENABLED -- uid %q binds as %q (must equal ldapd rootdn)",
-			cfg.AdminUID, cfg.AdminBindDN())
+		log.Printf("admin login: ENABLED -- uid %q binds as %q (must equal the %s rootdn)",
+			cfg.AdminUID, cfg.AdminBindDN(), cfg.Directory)
 	} else {
 		log.Printf("admin login: DISABLED (allow_admin=false) -- self-service only; rootdn %q still used for setup/out-of-band",
 			cfg.AdminBindDN())

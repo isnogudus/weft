@@ -1,17 +1,26 @@
-// Package ldapd implements directory.Directory against OpenBSD ldapd(8).
+// Package ldapclient implements directory.Directory against a real LDAP
+// server. Two server flavors are supported, selected by config
+// (directory = "ldapd" | "openldap"):
 //
-// It isolates the ldapd-specific behaviour observed during verification:
-//   - ldapd has no ModifyDN: RenameUID is add-new -> fixup memberUid -> delete-old.
-//   - ldapd enforces loaded schema, so add/modify carry the full objectClass
-//     chain and all MUST attributes.
-//   - userPassword is written pre-hashed as "{CRYPT}$2b$..."; ldapd verifies it
-//     on bind. weft never reads it back for verification.
+//   - OpenBSD ldapd(8), the original target. Its verified quirks shape the
+//     shared code: it has no ModifyDN (RenameUID is add-new -> fixup memberUid
+//     -> delete-old), and it enforces loaded schema, so add/modify carry the
+//     full objectClass chain and all MUST attributes.
+//   - OpenLDAP (slapd). Standard LDAPv3 semantics; the only behavioural
+//     difference in weft is RenameUID, which uses ModifyDN (atomic for the
+//     entry) followed by the same memberUid fixup (memberUid values are plain
+//     uid strings and do not rename with the entry).
 //
-// Authorization is delegated to ldapd: each Conn is bound as the logged-in
-// identity (admin = rootdn, otherwise the user's own DN). ldapd's ACLs decide
-// what the bound identity may write; this package surfaces a denial as
-// directory.ErrPermission.
-package ldapd
+// Everything else -- filters, objectClasses, {CRYPT} passwords, error mapping,
+// id allocation -- is plain LDAP and identical for both. userPassword is
+// written pre-hashed as "{CRYPT}$2b$..."; the server verifies it on bind, weft
+// never reads it back.
+//
+// Authorization is delegated to the server: each Conn is bound as the
+// logged-in identity (admin = rootdn, otherwise the user's own DN). The
+// server's ACLs decide what the bound identity may write; this package
+// surfaces a denial as directory.ErrPermission.
+package ldapclient
 
 import (
 	"context"
@@ -39,7 +48,7 @@ var (
 	groupClasses = []string{"top", "posixGroup"}
 )
 
-// Directory dials and binds against ldapd.
+// Directory dials and binds against the configured LDAP server.
 type Directory struct {
 	cfg     config.Config
 	tlsCfg  *tls.Config              // built once at New(); nil for ldapi/plain
@@ -80,7 +89,7 @@ func New(cfg config.Config, dialRaw func() (net.Conn, error)) (*Directory, error
 func buildTLSConfig(cfg config.Config) (*tls.Config, error) {
 	u, err := url.Parse(cfg.LDAPURL)
 	if err != nil {
-		return nil, fmt.Errorf("ldapd: parse url: %w", err)
+		return nil, fmt.Errorf("ldap: parse url: %w", err)
 	}
 	t := &tls.Config{
 		ServerName:         u.Hostname(),
@@ -93,11 +102,11 @@ func buildTLSConfig(cfg config.Config) (*tls.Config, error) {
 	if cfg.CACertFile != "" {
 		pem, err := os.ReadFile(cfg.CACertFile)
 		if err != nil {
-			return nil, fmt.Errorf("ldapd: read ca cert: %w", err)
+			return nil, fmt.Errorf("ldap: read ca cert: %w", err)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("ldapd: no certs found in %s", cfg.CACertFile)
+			return nil, fmt.Errorf("ldap: no certs found in %s", cfg.CACertFile)
 		}
 		t.RootCAs = pool
 		return t, nil
@@ -105,7 +114,7 @@ func buildTLSConfig(cfg config.Config) (*tls.Config, error) {
 	// Capture the system trust store now, before any sandbox locks the FS.
 	pool, err := x509.SystemCertPool()
 	if err != nil {
-		return nil, fmt.Errorf("ldapd: load system cert pool: %w", err)
+		return nil, fmt.Errorf("ldap: load system cert pool: %w", err)
 	}
 	t.RootCAs = pool
 	return t, nil
@@ -136,7 +145,7 @@ func (d *Directory) wrap(raw net.Conn) (*ldap.Conn, error) {
 		tconn := tls.Client(raw, d.tlsCfg)
 		if err := tconn.Handshake(); err != nil {
 			raw.Close()
-			return nil, fmt.Errorf("ldapd: tls handshake: %w", err)
+			return nil, fmt.Errorf("ldap: tls handshake: %w", err)
 		}
 		l := ldap.NewConn(tconn, true)
 		l.Start()
@@ -146,26 +155,26 @@ func (d *Directory) wrap(raw net.Conn) (*ldap.Conn, error) {
 		l.Start()
 		if err := l.StartTLS(d.tlsCfg); err != nil {
 			l.Close()
-			return nil, fmt.Errorf("ldapd: starttls: %w", err)
+			return nil, fmt.Errorf("ldap: starttls: %w", err)
 		}
 		return l, nil
 	default:
 		raw.Close()
-		return nil, fmt.Errorf("ldapd: unknown tls mode %q", d.cfg.TLSMode)
+		return nil, fmt.Errorf("ldap: unknown tls mode %q", d.cfg.TLSMode)
 	}
 }
 
 func (d *Directory) bind(dn, password string, admin bool) (directory.Conn, error) {
 	c, err := d.dial()
 	if err != nil {
-		return nil, fmt.Errorf("ldapd: dial: %w", err)
+		return nil, fmt.Errorf("ldap: dial: %w", err)
 	}
 	if err := c.Bind(dn, password); err != nil {
 		c.Close()
 		if ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
 			return nil, directory.ErrInvalidCredentials
 		}
-		return nil, fmt.Errorf("ldapd: bind: %w", err)
+		return nil, fmt.Errorf("ldap: bind: %w", err)
 	}
 	return &conn{d: d, lc: c, dn: dn, admin: admin}, nil
 }
@@ -175,7 +184,7 @@ func (d *Directory) BindUser(_ context.Context, uid, password string) (directory
 	return d.bind(d.cfg.UserDN(uid), password, false)
 }
 
-// BindAdmin binds as the configured admin DN (ldapd rootdn).
+// BindAdmin binds as the configured admin DN (the server's rootdn).
 func (d *Directory) BindAdmin(_ context.Context, password string) (directory.Conn, error) {
 	return d.bind(d.cfg.AdminBindDN(), password, true)
 }
@@ -184,7 +193,7 @@ func (d *Directory) BindAdmin(_ context.Context, password string) (directory.Con
 func (d *Directory) Provisioned(_ context.Context) (bool, error) {
 	c, err := d.dial()
 	if err != nil {
-		return false, fmt.Errorf("ldapd: dial: %w", err)
+		return false, fmt.Errorf("ldap: dial: %w", err)
 	}
 	defer c.Close()
 	req := ldap.NewSearchRequest(
@@ -195,7 +204,7 @@ func (d *Directory) Provisioned(_ context.Context) (bool, error) {
 		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
 			return false, nil
 		}
-		return false, fmt.Errorf("ldapd: provisioned check: %w", err)
+		return false, fmt.Errorf("ldap: provisioned check: %w", err)
 	}
 	return len(res.Entries) > 0, nil
 }
@@ -241,6 +250,9 @@ func (c *conn) userSearchAttrs() []string {
 	a = append(a, c.d.cfg.MailAttr)
 	if c.d.cfg.MailAliasAttr != "" {
 		a = append(a, c.d.cfg.MailAliasAttr)
+	}
+	for _, ua := range c.d.cfg.UserAttrs {
+		a = append(a, ua.Attr)
 	}
 	return a
 }
@@ -299,6 +311,17 @@ func (c *conn) parseUser(e *ldap.Entry) *directory.User {
 	if m := c.parseMail(e); m != nil {
 		u.Mail = m
 	}
+	if len(c.d.cfg.UserAttrs) > 0 {
+		extra := make(map[string]string)
+		for _, ua := range c.d.cfg.UserAttrs {
+			if v := e.GetAttributeValue(ua.Attr); v != "" {
+				extra[ua.Attr] = v
+			}
+		}
+		if len(extra) > 0 {
+			u.Extra = extra
+		}
+	}
 	return u
 }
 
@@ -327,6 +350,7 @@ func (c *conn) CreateUser(_ context.Context, u directory.User, hashedPassword st
 	if u.POSIX != nil {
 		classes = append(classes, posixClass)
 	}
+	classes = append(classes, c.d.cfg.UserExtraClasses...)
 	req.Attribute("objectClass", classes)
 	req.Attribute("uid", []string{u.UID})
 	req.Attribute("cn", []string{u.CN})
@@ -342,6 +366,9 @@ func (c *conn) CreateUser(_ context.Context, u directory.User, hashedPassword st
 		addIf(req, "gecos", u.POSIX.Gecos)
 	}
 	c.addMail(req, u.Mail)
+	for _, ua := range c.d.cfg.UserAttrs {
+		addIf(req, ua.Attr, u.Extra[ua.Attr])
+	}
 	return mapErr(c.lc.Add(req))
 }
 
@@ -405,7 +432,48 @@ func (c *conn) UpdateUser(ctx context.Context, u directory.User) error {
 	// Mail profile (no objectClass needed for the default "mail" attribute).
 	c.modifyMail(m, u.Mail)
 
+	// Extra attributes. Entries created before user_extra_classes was
+	// configured may lack the auxiliary classes; add the missing ones so the
+	// schema accepts the attributes.
+	if len(c.d.cfg.UserAttrs) > 0 {
+		if len(c.d.cfg.UserExtraClasses) > 0 {
+			missing, err := c.missingExtraClasses(u.UID)
+			if err != nil {
+				return err
+			}
+			if len(missing) > 0 {
+				m.Add("objectClass", missing)
+			}
+		}
+		for _, ua := range c.d.cfg.UserAttrs {
+			m.Replace(ua.Attr, nonEmpty([]string{u.Extra[ua.Attr]}))
+		}
+	}
+
 	return mapErr(c.lc.Modify(m))
+}
+
+// missingExtraClasses returns the configured auxiliary classes the entry does
+// not carry yet.
+func (c *conn) missingExtraClasses(uid string) ([]string, error) {
+	req := ldap.NewSearchRequest(
+		c.d.cfg.UserDN(uid), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
+		"(objectClass=*)", []string{"objectClass"}, nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	if len(res.Entries) == 0 {
+		return nil, directory.ErrNotFound
+	}
+	have := res.Entries[0].GetAttributeValues("objectClass")
+	var missing []string
+	for _, oc := range c.d.cfg.UserExtraClasses {
+		if !hasValue(have, oc) {
+			missing = append(missing, oc)
+		}
+	}
+	return missing, nil
 }
 
 func (c *conn) modifyMail(m *ldap.ModifyRequest, mail *directory.MailProfile) {
@@ -440,6 +508,31 @@ func (c *conn) DeleteUser(ctx context.Context, uid string) error {
 }
 
 func (c *conn) RenameUID(ctx context.Context, oldUID, newUID string) error {
+	if c.d.cfg.Directory == config.DirectoryOpenLDAP {
+		return c.renameModifyDN(ctx, oldUID, newUID)
+	}
+	return c.renameCopyDelete(ctx, oldUID, newUID)
+}
+
+// renameModifyDN renames via ModifyDN (OpenLDAP): atomic for the entry itself.
+// memberUid values are plain uid strings, so the group fixup still follows.
+func (c *conn) renameModifyDN(ctx context.Context, oldUID, newUID string) error {
+	req := ldap.NewModifyDNRequest(c.d.cfg.UserDN(oldUID), "uid="+newUID, true, "")
+	if err := mapErr(c.lc.ModifyDN(req)); err != nil {
+		return err
+	}
+	groups, err := c.groupsWithMember(oldUID)
+	if err != nil {
+		return err
+	}
+	for _, g := range groups {
+		_ = c.AddMember(ctx, g, newUID)
+		_ = c.RemoveMember(ctx, g, oldUID)
+	}
+	return nil
+}
+
+func (c *conn) renameCopyDelete(ctx context.Context, oldUID, newUID string) error {
 	// ldapd has no ModifyDN -> add-new, fixup memberUid, delete-old.
 	src := ldap.NewSearchRequest(
 		c.d.cfg.UserDN(oldUID), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
@@ -481,7 +574,7 @@ func (c *conn) CreateBaseDN(_ context.Context) error {
 	dn := c.d.cfg.BaseDN
 	parsed, err := ldap.ParseDN(dn)
 	if err != nil || len(parsed.RDNs) == 0 || len(parsed.RDNs[0].Attributes) == 0 {
-		return fmt.Errorf("ldapd: cannot parse base_dn %q", dn)
+		return fmt.Errorf("ldap: cannot parse base_dn %q", dn)
 	}
 	rdn := parsed.RDNs[0].Attributes[0]
 	attr, val := strings.ToLower(rdn.Type), rdn.Value
@@ -499,7 +592,7 @@ func (c *conn) CreateBaseDN(_ context.Context) error {
 		req.Attribute("objectClass", []string{"top", "organizationalUnit"})
 		req.Attribute("ou", []string{val})
 	default:
-		return fmt.Errorf("ldapd: cannot auto-create base entry %q (unsupported RDN type %q) -- create it manually", dn, attr)
+		return fmt.Errorf("ldap: cannot auto-create base entry %q (unsupported RDN type %q) -- create it manually", dn, attr)
 	}
 	return mapErr(c.lc.Add(req))
 }

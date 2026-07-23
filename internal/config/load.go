@@ -30,6 +30,7 @@ func Load(path string) (Config, error) {
 func applyEnv(c *Config) error {
 	envStr("WEFT_LDAP_URL", &c.LDAPURL)
 	envStr("WEFT_BASE_DN", &c.BaseDN)
+	envStr("WEFT_DIRECTORY", &c.Directory)
 	envStr("WEFT_ADMIN_UID", &c.AdminUID)
 	envStr("WEFT_ADMIN_DN", &c.AdminDN)
 	if err := envBool("WEFT_ALLOW_ADMIN", &c.AllowAdmin); err != nil {

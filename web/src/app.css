@@ -71,7 +71,7 @@ header.appbar {
   background: var(--panel); border-bottom: 1px solid var(--border);
   padding: 0.7rem 1.2rem;
 }
-.container { max-width: 980px; margin: 1.2rem auto; padding: 0 1rem; }
+.container { max-width: 1280px; margin: 1.2rem auto; padding: 0 1rem; }
 .tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
 .tabs button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -81,6 +81,8 @@ button.active { background: var(--accent); color: var(--accent-text); border-col
   display: grid; place-items: center; padding: 1rem; z-index: 10;
 }
 .modal { background: var(--panel); border-radius: var(--radius); padding: 1.3rem; width: 100%; max-width: 540px; max-height: 90vh; overflow: auto; }
+/* Full-width variant for table-heavy dialogs (bulk import). */
+.modal.wide { max-width: none; width: calc(100vw - 2rem); }
 
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); margin: 0 0 1rem; padding: 0.8rem 1rem; }
 legend { font-size: 0.85rem; color: var(--muted); }

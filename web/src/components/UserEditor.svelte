@@ -1,10 +1,12 @@
 <script>
   import { api } from '../lib/api.js'
   import { app } from '../lib/store.svelte.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, i18n } from '../lib/i18n.svelte.js'
+  import { generatePassword } from '../lib/password-gen.js'
 
   let { user, onClose, onSaved } = $props()
   const isNew = !user.uid
+  let showPw = $state(false)
 
   let uid = $state(user.uid || '')
   let cn = $state(user.cn || '')
@@ -23,6 +25,10 @@
   let hasMail = $state(!!user.mail)
   let mail = $state(user.mail?.mail || '')
   let aliases = $state((user.mail?.aliases || []).join('\n'))
+
+  const userAttrs = app.meta?.userAttrs || []
+  let extra = $state({ ...(user.extra || {}) })
+  const attrLabel = (a) => (i18n.lang === 'de' ? a.labelDe : a.labelEn) || a.attr
 
   let groups = $state([])
   let error = $state('')
@@ -63,6 +69,10 @@
         aliases: aliases.split('\n').map((s) => s.trim()).filter(Boolean),
       }
     }
+    if (userAttrs.length) {
+      p.extra = {}
+      for (const a of userAttrs) p.extra[a.attr] = extra[a.attr] || ''
+    }
     return p
   }
 
@@ -102,7 +112,12 @@
     <label><span>{t('Anzeigename (cn) *')}</span><input bind:value={cn} /></label>
     <label><span>displayName</span><input bind:value={displayName} /></label>
     {#if isNew}
-      <label><span>{t('Passwort *')}</span><input type="password" bind:value={password} /></label>
+      <label><span>{t('Passwort *')}</span>
+        <span class="row" style="gap:0.4rem">
+          <input type={showPw ? 'text' : 'password'} bind:value={password} style="flex:1" />
+          <button type="button" onclick={async () => { password = await generatePassword(meta.maxPasswordLength ?? 72); showPw = true }} title={t('Passphrase vorschlagen')}>{t('Vorschlagen')}</button>
+        </span>
+      </label>
     {/if}
 
     <fieldset>
@@ -130,6 +145,15 @@
         <label><span>{t('Aliase (eine pro Zeile)')}</span><textarea rows="3" bind:value={aliases}></textarea></label>
       {/if}
     </fieldset>
+
+    {#if userAttrs.length}
+      <fieldset>
+        <legend>{t('Weitere Attribute')}</legend>
+        {#each userAttrs as a (a.attr)}
+          <label><span>{attrLabel(a)}{a.required ? ' *' : ''}</span><input bind:value={extra[a.attr]} /></label>
+        {/each}
+      </fieldset>
+    {/if}
 
     {#if error}<p class="error">{error}</p>{/if}
     <div class="row" style="justify-content:flex-end">

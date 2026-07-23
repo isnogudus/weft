@@ -6,6 +6,11 @@
 ldap_url = "ldaps://ldap.example.org:636"
 base_dn  = "dc=example,dc=org"
 
+# Server flavor: "ldapd" (OpenBSD ldapd(8), default) or "openldap".
+# Same wire protocol; the flavor selects server-specific behaviour (OpenLDAP
+# renames uids atomically via ModifyDN). See README for the OpenLDAP ACLs.
+# directory = "ldapd"
+
 # For a LOCAL setup (weft and ldapd on the same host) the simplest option is the
 # Unix socket -- no TLS, no certificates:
 #   ldap_url = "ldapi:///var/run/ldapi"
@@ -54,6 +59,70 @@ admin_uid = "admin"
 # --- Mail attribute mapping ---
 # mail_attr       = "mail"      # primary address attribute
 # mail_alias_attr = ""          # empty -> aliases stored as extra "mail" values
+
+# --- Extra user attributes ---
+# Each [[user_attr]] adds a single-valued attribute to the user form, detail
+# view and import. `attr` is the LDAP attribute name; the labels are shown in
+# the UI (fallback: the other language, then the attribute name).
+#
+# The set below covers what a twenty-search/Matrix user-directory sync reads
+# from the directory. All of these are MAY attributes of the inetOrgPerson
+# chain, so they work without schema changes:
+#
+# [[user_attr]]
+# attr     = "telephoneNumber"
+# label_de = "Telefon"
+# label_en = "Phone"
+#
+# [[user_attr]]
+# attr     = "ou"               # Dienststelle / department
+# label_de = "Dienststelle"
+# label_en = "Department"
+#
+# [[user_attr]]
+# attr     = "departmentNumber" # Einheit / Fachbereich
+# label_de = "Einheit / Fachbereich"
+# label_en = "Unit / section"
+#
+# [[user_attr]]
+# attr     = "o"
+# label_de = "Landes- / Bundesbehörde"
+# label_en = "Organization"
+#
+# [[user_attr]]
+# attr     = "st"
+# label_de = "Bundesland"
+# label_en = "State"
+#
+# [[user_attr]]
+# attr     = "l"
+# label_de = "Dienstort"
+# label_en = "Locality"
+#
+# [[user_attr]]
+# attr     = "title"
+# label_de = "Dienstfunktion"
+# label_en = "Title"
+#
+# [[user_attr]]
+# attr     = "labeledURI"
+# label_de = "URL"
+# label_en = "URL"
+#
+# Attributes OUTSIDE the inetOrgPerson chain (e.g. "c"/countryName, or
+# site-specific ones like a radio call name) additionally need an auxiliary
+# objectClass whose schema is loaded on the server, listed in:
+# user_extra_classes = ["policePerson"]
+#
+# [[user_attr]]
+# attr     = "c"                # requires an auxiliary class -- NOT valid on plain inetOrgPerson
+# label_de = "Land"
+# label_en = "Country"
+#
+# [[user_attr]]
+# attr     = "destinationIndicator"  # "HideExternally" opts a user out of external indexing
+# label_de = "Externe Sichtbarkeit"
+# label_en = "External visibility"
 
 # --- Password hashing (bcrypt -> {CRYPT}) ---
 # bcrypt_cost         = 12

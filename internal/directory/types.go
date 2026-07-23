@@ -17,6 +17,11 @@ type User struct {
 	POSIX *POSIXProfile
 	// Mail is set when the user has a mail profile.
 	Mail *MailProfile
+
+	// Extra holds the values of the configured extra attributes
+	// (config.UserAttrs), keyed by LDAP attribute name. Only single-valued
+	// string attributes are supported; absent/empty values are omitted.
+	Extra map[string]string
 }
 
 // HasPOSIX reports whether the user carries a POSIX profile.

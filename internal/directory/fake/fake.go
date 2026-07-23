@@ -446,6 +446,12 @@ func cloneUser(u *directory.User) *directory.User {
 		m.Aliases = append([]string(nil), u.Mail.Aliases...)
 		cp.Mail = &m
 	}
+	if u.Extra != nil {
+		cp.Extra = make(map[string]string, len(u.Extra))
+		for k, v := range u.Extra {
+			cp.Extra[k] = v
+		}
+	}
 	return &cp
 }
 

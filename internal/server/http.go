@@ -57,9 +57,16 @@ func writeDirError(w http.ResponseWriter, err error) {
 	}
 }
 
-// readJSON decodes a JSON request body with a size limit and strict fields.
+// readJSON decodes a JSON request body with the default size limit and strict
+// fields.
 func readJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	return readJSONMax(w, r, dst, maxBodyBytes)
+}
+
+// readJSONMax is readJSON with an explicit size limit (the bulk import accepts
+// larger bodies than the 1 MiB default).
+func readJSONMax(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {

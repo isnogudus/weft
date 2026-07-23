@@ -1,4 +1,4 @@
-package ldapd
+package ldapclient
 
 import (
 	"weft/internal/directory"

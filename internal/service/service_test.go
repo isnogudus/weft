@@ -64,6 +64,74 @@ func TestCreateUserPOSIXDefaults(t *testing.T) {
 	}
 }
 
+func setupWithAttrs(t *testing.T) (*Service, directory.Conn) {
+	t.Helper()
+	cfg := config.Default()
+	cfg.BaseDN = "dc=example,dc=org"
+	cfg.UserAttrs = []config.UserAttr{
+		{Attr: "telephoneNumber", LabelDE: "Telefon"},
+		{Attr: "st", LabelDE: "Bundesland", Required: true},
+	}
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10005}, idalloc.Range{Min: 20000, Max: 20005})
+	f.AddGroup(directory.Group{CN: "users", GIDNumber: 20000})
+	admin, err := f.BindAdmin(context.Background(), "rootpw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return New(cfg), admin
+}
+
+func TestCreateUserExtraAttrs(t *testing.T) {
+	s, c := setupWithAttrs(t)
+	ctx := context.Background()
+
+	// Required extra attribute missing -> reject.
+	_, err := s.CreateUser(ctx, c, NewUser{UID: "dora", CN: "Dora", SN: "D", Password: "longenoughpw!"})
+	if err == nil || !strings.Contains(err.Error(), "st") {
+		t.Fatalf("expected required-attr error, got %v", err)
+	}
+
+	// Unknown key -> reject.
+	_, err = s.CreateUser(ctx, c, NewUser{
+		UID: "dora", CN: "Dora", SN: "D", Password: "longenoughpw!",
+		Extra: map[string]string{"st": "NI", "surprise": "x"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "surprise") {
+		t.Fatalf("expected unknown-attr error, got %v", err)
+	}
+
+	// Valid create round-trips; empty optional value is dropped.
+	u, err := s.CreateUser(ctx, c, NewUser{
+		UID: "dora", CN: "Dora", SN: "D", Password: "longenoughpw!",
+		Extra: map[string]string{"st": " NI ", "telephoneNumber": ""},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Extra["st"] != "NI" {
+		t.Fatalf("extra st = %q, want NI (trimmed)", u.Extra["st"])
+	}
+	if _, ok := u.Extra["telephoneNumber"]; ok {
+		t.Fatal("empty optional extra should be dropped")
+	}
+	got, err := c.GetUser(ctx, "dora")
+	if err != nil || got.Extra["st"] != "NI" {
+		t.Fatalf("extra not stored: %v, %v", got, err)
+	}
+
+	// Update replaces the set.
+	if _, err = s.UpdateUser(ctx, c, NewUser{
+		UID: "dora", CN: "Dora", SN: "D",
+		Extra: map[string]string{"st": "HB", "telephoneNumber": "+49 421 1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = c.GetUser(ctx, "dora")
+	if got.Extra["st"] != "HB" || got.Extra["telephoneNumber"] != "+49 421 1" {
+		t.Fatalf("extra after update = %v", got.Extra)
+	}
+}
+
 func TestCreateUserRejectsBadUID(t *testing.T) {
 	s, c := setup(t)
 	_, err := s.CreateUser(context.Background(), c, NewUser{

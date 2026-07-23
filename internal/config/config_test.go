@@ -38,6 +38,58 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestValidateUserAttrs(t *testing.T) {
+	c := validBase()
+	c.UserAttrs = []UserAttr{
+		{Attr: "telephoneNumber", LabelDE: "Telefon", LabelEN: "Phone"},
+		{Attr: "departmentNumber", Required: true},
+	}
+	c.UserExtraClasses = []string{"policePerson"}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid user_attr config rejected: %v", err)
+	}
+
+	for _, bad := range []UserAttr{
+		{Attr: "uid"},              // reserved
+		{Attr: "mail"},             // collides with mail_attr
+		{Attr: "userPassword"},     // reserved (case-insensitive)
+		{Attr: "invalid attr"},     // bad charset
+		{Attr: ""},                 // empty
+		{Attr: "1telephoneNumber"}, // must start with a letter
+	} {
+		c := validBase()
+		c.UserAttrs = []UserAttr{bad}
+		if err := c.Validate(); err == nil {
+			t.Fatalf("user_attr %q should be rejected", bad.Attr)
+		}
+	}
+
+	c = validBase()
+	c.UserAttrs = []UserAttr{{Attr: "st"}, {Attr: "ST"}}
+	if err := c.Validate(); err == nil {
+		t.Fatal("duplicate user_attr (case-insensitive) should be rejected")
+	}
+
+	c = validBase()
+	c.UserExtraClasses = []string{"bad class"}
+	if err := c.Validate(); err == nil {
+		t.Fatal("invalid user_extra_classes name should be rejected")
+	}
+}
+
+func TestUserAttrLabel(t *testing.T) {
+	a := UserAttr{Attr: "st", LabelDE: "Bundesland", LabelEN: "State"}
+	if a.Label("de") != "Bundesland" || a.Label("en") != "State" {
+		t.Fatal("Label lang selection broken")
+	}
+	if (UserAttr{Attr: "st", LabelDE: "Bundesland"}).Label("en") != "Bundesland" {
+		t.Fatal("Label fallback to other language broken")
+	}
+	if (UserAttr{Attr: "st"}).Label("de") != "st" {
+		t.Fatal("Label fallback to attr name broken")
+	}
+}
+
 func TestLDAPIOverridesTLS(t *testing.T) {
 	c := validBase()
 	c.LDAPURL = "ldapi:///var/run/ldapi"

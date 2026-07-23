@@ -127,12 +127,19 @@ func (s *Server) handleMeGroups(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	c := s.cfg
+	attrs := make([]userAttrDTO, 0, len(c.UserAttrs))
+	for _, a := range c.UserAttrs {
+		attrs = append(attrs, userAttrDTO{
+			Attr: a.Attr, LabelDE: a.Label("de"), LabelEN: a.Label("en"), Required: a.Required,
+		})
+	}
 	writeJSON(w, http.StatusOK, metaDTO{
 		BaseDN: c.BaseDN, PeopleOU: c.PeopleOU, GroupsOU: c.GroupsOU,
 		PrimaryGroup: c.PrimaryGroup, DefaultShell: c.DefaultShell, HomeTemplate: c.HomeTemplate,
 		UIDMin: c.UIDMin, UIDMax: c.UIDMax, GIDMin: c.GIDMin, GIDMax: c.GIDMax,
 		MaxPwdLength: c.MaxPasswordLength, MailAttr: c.MailAttr, MailAliasAttr: c.MailAliasAttr,
 		SessionTimeoutSeconds: int(c.SessionTimeout.D().Seconds()),
+		UserAttrs:             attrs,
 	})
 }
 
@@ -256,6 +263,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 			UID: req.UID, CN: req.CN, SN: req.SN,
 			GivenName: req.GivenName, DisplayName: req.DisplayName,
 			Password: req.Password, POSIX: req.POSIX.toInput(), Mail: req.Mail.toProfile(),
+			Extra: req.Extra,
 		})
 		if err != nil {
 			handleServiceError(w, err)
@@ -277,6 +285,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 			UID: uid, CN: req.CN, SN: req.SN,
 			GivenName: req.GivenName, DisplayName: req.DisplayName,
 			POSIX: req.POSIX.toInput(), Mail: req.Mail.toProfile(),
+			Extra: req.Extra,
 		})
 		if err != nil {
 			handleServiceError(w, err)

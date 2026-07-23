@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -23,11 +24,22 @@ const (
 	TLSPlain    TLSMode = "plain"    // no TLS -- dev only, must be explicitly allowed
 )
 
+// Directory server flavors.
+const (
+	DirectoryLdapd    = "ldapd"    // OpenBSD ldapd(8), the original target
+	DirectoryOpenLDAP = "openldap" // OpenLDAP slapd
+)
+
 // Config is the fully-resolved configuration.
 type Config struct {
 	// Core
 	LDAPURL string `toml:"ldap_url"`
 	BaseDN  string `toml:"base_dn"`
+
+	// Directory selects the server flavor ("ldapd" or "openldap"). The wire
+	// protocol is the same; the flavor decides server-specific behaviour such
+	// as how a uid rename is performed (OpenLDAP: ModifyDN; ldapd: copy+delete).
+	Directory string `toml:"directory"`
 
 	// Transport security to the LDAP server.
 	TLSMode            TLSMode `toml:"tls_mode"`
@@ -70,6 +82,13 @@ type Config struct {
 	MailAttr      string `toml:"mail_attr"`
 	MailAliasAttr string `toml:"mail_alias_attr"`
 
+	// Extra user attributes managed by weft beyond the built-in set, defined as
+	// [[user_attr]] tables. Attributes outside the inetOrgPerson chain (e.g. "c"
+	// or site-specific schema) additionally need their auxiliary objectClass
+	// listed in UserExtraClasses, and the schema loaded on the server.
+	UserAttrs        []UserAttr `toml:"user_attr"`
+	UserExtraClasses []string   `toml:"user_extra_classes"`
+
 	// Password hashing.
 	BcryptCost        int `toml:"bcrypt_cost"`
 	MaxPasswordLength int `toml:"max_password_length"` // bcrypt truncates at 72 bytes
@@ -99,6 +118,30 @@ type Config struct {
 	CookieSecure   bool     `toml:"cookie_secure"`   // set false only for local http dev
 }
 
+// UserAttr defines one configurable extra user attribute (a [[user_attr]]
+// table). Attr is the LDAP attribute name; the labels are shown in the UI.
+type UserAttr struct {
+	Attr     string `toml:"attr"`
+	LabelDE  string `toml:"label_de"`
+	LabelEN  string `toml:"label_en"`
+	Required bool   `toml:"required"`
+}
+
+// Label returns the UI label for the given language, falling back to the other
+// language and finally the raw attribute name.
+func (a UserAttr) Label(lang string) string {
+	if lang == "de" && a.LabelDE != "" {
+		return a.LabelDE
+	}
+	if a.LabelEN != "" {
+		return a.LabelEN
+	}
+	if a.LabelDE != "" {
+		return a.LabelDE
+	}
+	return a.Attr
+}
+
 // Duration is a time.Duration that decodes from a TOML/env string like "30m".
 type Duration time.Duration
 
@@ -119,6 +162,7 @@ func (d *Duration) UnmarshalText(text []byte) error {
 // (LDAPURL, BaseDN, AdminDN) are intentionally left empty and must be supplied.
 func Default() Config {
 	return Config{
+		Directory:         DirectoryLdapd,
 		TLSMode:           TLSLDAPS,
 		AdminUID:          "admin",
 		AllowAdmin:        true,
@@ -272,6 +316,9 @@ func (c Config) Validate() error {
 	if c.BaseDN == "" {
 		return fmt.Errorf("config: base_dn is required")
 	}
+	if c.Directory != DirectoryLdapd && c.Directory != DirectoryOpenLDAP {
+		return fmt.Errorf("config: directory must be %q or %q", DirectoryLdapd, DirectoryOpenLDAP)
+	}
 	if c.AdminUID == "" {
 		return fmt.Errorf("config: admin_uid is required")
 	}
@@ -287,5 +334,56 @@ func (c Config) Validate() error {
 	if c.InsecureSkipVerify {
 		// not fatal, but the server logs a warning at startup
 	}
+	if err := c.validateUserAttrs(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// attrNamePattern is the LDAP attribute descriptor charset (RFC 4512 keystring).
+var attrNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`)
+
+// reservedUserAttrs are attributes weft manages through dedicated fields; a
+// [[user_attr]] must not shadow them (lowercase for case-insensitive matching).
+var reservedUserAttrs = map[string]bool{
+	"uid": true, "cn": true, "sn": true, "givenname": true, "displayname": true,
+	"userpassword": true, "objectclass": true,
+	"uidnumber": true, "gidnumber": true, "homedirectory": true,
+	"loginshell": true, "gecos": true, "memberuid": true,
+}
+
+func (c Config) validateUserAttrs() error {
+	seen := map[string]bool{}
+	for _, a := range c.UserAttrs {
+		if !attrNamePattern.MatchString(a.Attr) {
+			return fmt.Errorf("config: user_attr %q: invalid attribute name", a.Attr)
+		}
+		lower := strings.ToLower(a.Attr)
+		if reservedUserAttrs[lower] ||
+			lower == strings.ToLower(c.MailAttr) ||
+			(c.MailAliasAttr != "" && lower == strings.ToLower(c.MailAliasAttr)) {
+			return fmt.Errorf("config: user_attr %q collides with a built-in attribute", a.Attr)
+		}
+		if seen[lower] {
+			return fmt.Errorf("config: user_attr %q is listed twice", a.Attr)
+		}
+		seen[lower] = true
+	}
+	for _, oc := range c.UserExtraClasses {
+		if !attrNamePattern.MatchString(oc) {
+			return fmt.Errorf("config: user_extra_classes %q: invalid objectClass name", oc)
+		}
+	}
+	return nil
+}
+
+// UserAttrByName returns the configured extra attribute with the given LDAP
+// name (case-insensitive), or false.
+func (c Config) UserAttrByName(name string) (UserAttr, bool) {
+	for _, a := range c.UserAttrs {
+		if strings.EqualFold(a.Attr, name) {
+			return a, true
+		}
+	}
+	return UserAttr{}, false
 }

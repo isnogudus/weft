@@ -86,6 +86,7 @@ func (s *Server) routes() http.Handler {
 				adm.Use(s.requireAdmin)
 				adm.Get("/users", s.handleListUsers)
 				adm.Post("/users", s.handleCreateUser)
+				adm.Post("/users/import", s.handleImportUsers)
 				adm.Get("/users/{uid}", s.handleGetUser)
 				adm.Put("/users/{uid}", s.handleUpdateUser)
 				adm.Delete("/users/{uid}", s.handleDeleteUser)

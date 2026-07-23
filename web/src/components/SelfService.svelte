@@ -1,11 +1,13 @@
 <script>
   import { api, setCsrf, endSession } from '../lib/api.js'
   import { app } from '../lib/store.svelte.js'
-  import { t } from '../lib/i18n.svelte.js'
+  import { t, i18n } from '../lib/i18n.svelte.js'
   import ChangePassword from './ChangePassword.svelte'
   import LangSwitch from './LangSwitch.svelte'
 
   let profile = $state(null)
+  const userAttrs = app.meta?.userAttrs || []
+  const attrLabel = (a) => (i18n.lang === 'de' ? a.labelDe : a.labelEn) || a.attr
   let groups = $state([])
   let showPw = $state(false)
   let error = $state('')
@@ -55,6 +57,11 @@
               <tr><th>{t('Mail-Aliase')}</th><td>{profile.mail.aliases.join(', ')}</td></tr>
             {/if}
           {/if}
+          {#each userAttrs as a (a.attr)}
+            {#if profile.extra?.[a.attr]}
+              <tr><th>{attrLabel(a)}</th><td>{profile.extra[a.attr]}</td></tr>
+            {/if}
+          {/each}
         </tbody>
       </table>
     </div>

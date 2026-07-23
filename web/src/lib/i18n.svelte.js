@@ -111,6 +111,7 @@ const en = {
   'uidNumber (leer = automatisch)': 'uidNumber (empty = automatic)',
   'Primärgruppe (gidNumber)': 'Primary group (gidNumber)',
   'Mail-Profil': 'Mail profile',
+  'Weitere Attribute': 'Additional attributes',
   'Primäradresse ({attr})': 'Primary address ({attr})',
   'Aliase (eine pro Zeile)': 'Aliases (one per line)',
   'Passwort: höchstens {n} Zeichen.': 'Password: at most {n} characters.',
@@ -145,6 +146,82 @@ const en = {
   'Mail-Aliase': 'Mail aliases',
   'Meine Gruppen': 'My groups',
   'Keine.': 'None.',
+
+  // Passwords / generator
+  'Vorschlagen': 'Suggest',
+  'Passphrase vorschlagen': 'Suggest a passphrase',
+  'Neues Passwort vorschlagen': 'Suggest a new password',
+
+  // Bulk import
+  'Importieren': 'Import',
+  'Benutzer importieren': 'Import users',
+  'CSV-, Excel- (.xlsx) oder Numbers-Datei wählen. Die Datei wird im Browser gelesen; erst der Import überträgt Daten.':
+    'Choose a CSV, Excel (.xlsx) or Numbers file. It is parsed in your browser; nothing is transferred until you start the import.',
+  'Die Datei enthält keine Zeilen.': 'The file contains no rows.',
+  'Datei konnte nicht gelesen werden.': 'Could not read the file.',
+  '{n} Zeilen': '{n} rows',
+  'Kopfzeile (Zeile Nr.)': 'Header row (line no.)',
+  'POSIX-Profil anlegen': 'Create POSIX profile',
+  'Primärgruppe': 'Primary group',
+  '— ignorieren —': '— ignore —',
+  'Zurück': 'Back',
+  'Weiter zur Überprüfung': 'Continue to review',
+  'Keine Spalte ist "uid" zugeordnet (oder alternativ Vor- und Nachname).':
+    'No column is mapped to "uid" (or, alternatively, first and last name).',
+  '{n} uids wurden aus Vorname.Nachname abgeleitet.':
+    '{n} uids were derived from firstname.lastname.',
+  '{n} davon mit Zahlensuffix wegen Namenskollision — bitte prüfen (gelb markiert).':
+    '{n} of them got a numeric suffix due to a name collision — please review (highlighted in yellow).',
+  'Automatisch mit Zahlensuffix versehen: Es gibt schon einen Benutzer dieses Namens mit anderer Mail-Adresse.':
+    'Automatically suffixed: a user of this name already exists with a different mail address.',
+  'Entscheidet über die Namenskollision: {uid} hat die Mail {mail}. Dieselbe Mail eintragen, wenn es dieselbe Person ist — die Zeile wird dann übersprungen.':
+    'Decides the name collision: {uid} has the mail {mail}. Enter the same mail if this is the same person — the row will then be skipped.',
+  'Namenskollision — bitte prüfen': 'Name collision — please review',
+  'Verzeichnis:': 'Directory:',
+  'Im Verzeichnis vorhandener Benutzer': 'User already present in the directory',
+  'existiert mit anderer Mail — andere Person? Dann uid ändern':
+    'exists with a different mail — another person? Then change the uid',
+  'weicht von der Mail im Verzeichnis ab': 'differs from the mail in the directory',
+  'ohne Mail': 'no mail',
+  '{n} Zeilen; {ok} bereit, {conflict} übersprungen (uid existiert), {invalid} fehlerhaft.':
+    '{n} rows; {ok} ready, {conflict} skipped (uid exists), {invalid} invalid.',
+  'Passwörter wurden generiert, wo die Datei keine enthielt; alle Felder sind editierbar.':
+    'Passwords were generated where the file had none; every field is editable.',
+  'Status': 'Status',
+  'Importiere … {done}/{total}': 'Importing … {done}/{total}',
+  'Import starten ({n} Benutzer)': 'Start import ({n} users)',
+  '„Import starten“ setzt beim fehlgeschlagenen Block fort.': '“Start import” resumes at the failed chunk.',
+  '{created} angelegt, {skipped} übersprungen (bereits vorhanden), {failed} fehlgeschlagen.':
+    '{created} created, {skipped} skipped (already present), {failed} failed.',
+  'Die generierten Passwörter sind NUR JETZT abrufbar und werden nirgends gespeichert.':
+    'The generated passwords are available ONLY NOW and are not stored anywhere.',
+  'Passwörter als CSV herunterladen': 'Download passwords as CSV',
+  'Fehlgeschlagene Zeilen können nach Korrektur erneut importiert werden.':
+    'Failed rows can be corrected and imported again.',
+  'Zurück zur Überprüfung': 'Back to review',
+  'angelegt': 'created',
+  'existiert': 'exists',
+  'unbekannt (Verbindung unterbrochen)': 'unknown (connection lost)',
+  'übersprungen': 'skipped',
+  'Fehler': 'error',
+  'fehlerhaft': 'invalid',
+  'Server': 'server',
+  // Row validation reasons (from importModel.js validateRow)
+  'uid fehlt': 'uid missing',
+  'ungültige uid': 'invalid uid',
+  'uid doppelt in der Datei': 'duplicate uid in the file',
+  'uid existiert bereits': 'uid already exists',
+  'Nachname (sn) fehlt': 'surname (sn) missing',
+  'cn fehlt': 'cn missing',
+  'Steuerzeichen im Wert': 'control characters in value',
+  'ungültige Adresse': 'invalid address',
+  'Adresse doppelt in der Datei': 'duplicate address in the file',
+  'Adresse doppelt in der Datei — vermutlich doppelte Zeile': 'duplicate address in the file — probably a duplicated row',
+  'Adresse bereits im Verzeichnis': 'address already in the directory',
+  'keine Zahl': 'not a number',
+  'doppelt in der Datei': 'duplicate in the file',
+  'bereits vergeben': 'already taken',
+  'Pflichtfeld': 'required',
 }
 
 const tables = { de: {}, en }
