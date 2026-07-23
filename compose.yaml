@@ -1,0 +1,57 @@
+# weft + OpenLDAP -- a self-contained demo/test stack.
+#
+#   docker compose up --build
+#   -> weft UI:  http://localhost:8080   (login: admin / adminpw)
+#
+# The OpenLDAP container creates dc=example,dc=org with the rootdn
+# cn=admin,dc=example,dc=org; weft's first-run wizard then creates ou=people,
+# ou=groups and the default primary group (enter the admin password "adminpw").
+#
+# NOTE: this stack talks plain LDAP on the internal compose network and serves
+# plain HTTP -- fine for evaluation, not for production. For production use
+# ldaps:// (or StartTLS) with a ca_cert_file, put TLS in front of weft, and
+# drop allow_plain_bind/cookie_secure overrides.
+
+services:
+  openldap:
+    image: osixia/openldap:1.5.0
+    # platform: linux/amd64   # uncomment if your host arch has no native image
+    environment:
+      LDAP_ORGANISATION: "Example Org"
+      LDAP_DOMAIN: "example.org"          # -> base dc=example,dc=org
+      LDAP_ADMIN_PASSWORD: "adminpw"      # rootdn cn=admin,dc=example,dc=org
+      LDAP_TLS: "false"
+    volumes:
+      - ldap-data:/var/lib/ldap
+      - ldap-config:/etc/ldap/slapd.d
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://127.0.0.1 -b dc=example,dc=org -s base >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  weft:
+    build:
+      context: .
+    depends_on:
+      openldap:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    # Core settings via env; the mounted TOML adds what env cannot express
+    # (the [[user_attr]] tables). Env has precedence over the file.
+    environment:
+      WEFT_DIRECTORY: openldap
+      WEFT_LDAP_URL: ldap://openldap:389
+      WEFT_BASE_DN: dc=example,dc=org
+      WEFT_ADMIN_DN: cn=admin,dc=example,dc=org
+      WEFT_TLS_MODE: plain
+      WEFT_ALLOW_PLAIN_BIND: "true"   # internal compose network only
+      WEFT_COOKIE_SECURE: "false"     # plain-HTTP demo access
+    volumes:
+      - ./contrib/docker/weft.toml:/etc/weft/weft.toml:ro
+    command: ["-config", "/etc/weft/weft.toml"]
+
+volumes:
+  ldap-data:
+  ldap-config:

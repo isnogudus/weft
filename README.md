@@ -225,6 +225,27 @@ cd web && npm run dev                    # Vite dev server, proxies /api to :809
 
 In `-dev` mode the admin is `admin` / `rootpw` (override with `-dev-rootpw`).
 
+### Docker
+
+A multi-stage [`Dockerfile`](Dockerfile) builds the SPA and a static binary
+into a small Alpine image (~15 MB). Configuration enters the container via
+`WEFT_*` environment variables; mount a TOML and pass `-config` for options
+without an env equivalent (e.g. the `[[user_attr]]` tables). Started as root,
+the privsep worker chroots to `/var/empty` and drops to `_weft` as usual; run
+the container with a non-root user to skip chroot/privdrop.
+
+[`compose.yaml`](compose.yaml) is a self-contained evaluation stack with an
+OpenLDAP server (`directory = "openldap"`):
+
+```sh
+docker compose up --build
+```
+
+Then open http://localhost:8080, run the setup wizard with the demo rootpw
+`adminpw`, and log in as `admin` / `adminpw`. The stack speaks plain LDAP on
+the internal network and plain HTTP — evaluation only; see the comments in
+`compose.yaml` for what to change in production.
+
 ## Security
 
 - TLS to the LDAP server is enforced whenever credentials are sent (`plain`

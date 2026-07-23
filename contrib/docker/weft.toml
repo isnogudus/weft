@@ -1,0 +1,53 @@
+# weft configuration for the compose demo stack (see compose.yaml).
+#
+# The connection settings (ldap_url, base_dn, admin_dn, tls_mode, ...) are
+# supplied as WEFT_* environment variables in compose.yaml and take precedence
+# over this file. The file carries what env cannot express -- notably the
+# [[user_attr]] tables.
+
+ldap_url  = "ldap://openldap:389"
+base_dn   = "dc=example,dc=org"
+directory = "openldap"
+admin_dn  = "cn=admin,dc=example,dc=org"
+
+# --- Extra user attributes (the twenty-search / user-list set) ---
+
+[[user_attr]]
+attr     = "telephoneNumber"
+label_de = "Telefon"
+label_en = "Phone"
+
+[[user_attr]]
+attr     = "ou"
+label_de = "Dienststelle"
+label_en = "Department"
+
+[[user_attr]]
+attr     = "departmentNumber"
+label_de = "Einheit / Fachbereich"
+label_en = "Unit / section"
+
+[[user_attr]]
+attr     = "o"
+label_de = "Landes- / Bundesbehörde"
+label_en = "Organization"
+
+[[user_attr]]
+attr     = "st"
+label_de = "Bundesland"
+label_en = "State"
+
+[[user_attr]]
+attr     = "l"
+label_de = "Dienstort"
+label_en = "Locality"
+
+[[user_attr]]
+attr     = "title"
+label_de = "Dienstfunktion"
+label_en = "Title"
+
+[[user_attr]]
+attr     = "labeledURI"
+label_de = "URL"
+label_en = "URL"

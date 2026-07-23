@@ -1,0 +1,13 @@
+# Keep the build context small and reproducible.
+.git
+.claude
+node_modules
+web/node_modules
+web/dist
+weft
+weft.openbsd-amd64
+# Local deployment config (contains your real LDAP endpoint) -- configuration
+# enters the container via WEFT_* env or an explicitly mounted TOML.
+weft.toml
+Dockerfile
+compose.yaml
