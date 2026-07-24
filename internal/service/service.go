@@ -262,6 +262,9 @@ func (s *Service) normalizeExtra(in map[string]string) (map[string]string, error
 			}
 			continue
 		}
+		if len(a.Options) > 0 && !a.HasOption(v) {
+			return nil, fmt.Errorf("%s: %q is not one of the configured values", a.Attr, v)
+		}
 		if err := validText(a.Attr, v); err != nil {
 			return nil, err
 		}

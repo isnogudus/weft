@@ -144,26 +144,60 @@ type Config struct {
 
 // UserAttr defines one configurable extra user attribute (a [[user_attr]]
 // table). Attr is the LDAP attribute name; the labels are shown in the UI.
+// Options, if non-empty, restricts the value to a fixed set (rendered as a
+// dropdown instead of free text) -- e.g. a tri-state visibility flag.
 type UserAttr struct {
-	Attr     string `toml:"attr"`
-	LabelDE  string `toml:"label_de"`
-	LabelEN  string `toml:"label_en"`
-	Required bool   `toml:"required"`
+	Attr     string           `toml:"attr"`
+	LabelDE  string           `toml:"label_de"`
+	LabelEN  string           `toml:"label_en"`
+	Required bool             `toml:"required"`
+	Options  []UserAttrOption `toml:"options"`
+}
+
+// UserAttrOption is one selectable value of an enum-constrained UserAttr (a
+// nested [[user_attr.options]] table). Value is the literal string written to
+// LDAP; an empty Value clears the attribute (lets an admin pick a "default"
+// entry that leaves the attribute unset).
+type UserAttrOption struct {
+	Value   string `toml:"value"`
+	LabelDE string `toml:"label_de"`
+	LabelEN string `toml:"label_en"`
 }
 
 // Label returns the UI label for the given language, falling back to the other
 // language and finally the raw attribute name.
 func (a UserAttr) Label(lang string) string {
-	if lang == "de" && a.LabelDE != "" {
-		return a.LabelDE
+	return pickLabel(lang, a.LabelDE, a.LabelEN, a.Attr)
+}
+
+// HasOption reports whether v is one of the attribute's configured Options
+// (exact match; only meaningful when Options is non-empty).
+func (a UserAttr) HasOption(v string) bool {
+	for _, o := range a.Options {
+		if o.Value == v {
+			return true
+		}
 	}
-	if a.LabelEN != "" {
-		return a.LabelEN
+	return false
+}
+
+// Label returns the UI label for the given language, falling back to the other
+// language and finally the raw stored value.
+func (o UserAttrOption) Label(lang string) string {
+	return pickLabel(lang, o.LabelDE, o.LabelEN, o.Value)
+}
+
+func pickLabel(lang, de, en, fallback string) string {
+	if lang == "de" && de != "" {
+		return de
 	}
-	if a.LabelDE != "" {
-		return a.LabelDE
+	if en != "" {
+		return en
 	}
-	return a.Attr
+	if de != "" {
+		return de
+	}
+	return fallback
 }
 
 // Duration is a time.Duration that decodes from a TOML/env string like "30m".
@@ -431,6 +465,13 @@ func (c Config) validateUserAttrs() error {
 			return fmt.Errorf("config: user_attr %q is listed twice", a.Attr)
 		}
 		seen[lower] = true
+		seenValues := map[string]bool{}
+		for _, o := range a.Options {
+			if seenValues[o.Value] {
+				return fmt.Errorf("config: user_attr %q: option %q is listed twice", a.Attr, o.Value)
+			}
+			seenValues[o.Value] = true
+		}
 	}
 	for _, oc := range c.UserExtraClasses {
 		if !attrNamePattern.MatchString(oc) {

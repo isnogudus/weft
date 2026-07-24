@@ -236,8 +236,15 @@ type metaDTO struct {
 }
 
 type userAttrDTO struct {
-	Attr     string `json:"attr"`
-	LabelDE  string `json:"labelDe"`
-	LabelEN  string `json:"labelEn"`
-	Required bool   `json:"required"`
+	Attr     string              `json:"attr"`
+	LabelDE  string              `json:"labelDe"`
+	LabelEN  string              `json:"labelEn"`
+	Required bool                `json:"required"`
+	Options  []userAttrOptionDTO `json:"options,omitempty"`
+}
+
+type userAttrOptionDTO struct {
+	Value   string `json:"value"`
+	LabelDE string `json:"labelDe"`
+	LabelEN string `json:"labelEn"`
 }

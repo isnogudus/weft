@@ -61,6 +61,12 @@
   let pwUrl = $state('')
 
   const attrLabel = (a) => (i18n.lang === 'de' ? a.labelDe : a.labelEn) || a.attr
+  const optionLabel = (o) => (i18n.lang === 'de' ? o.labelDe : o.labelEn) || o.value
+  const attrFor = (tgt) => userAttrs.find((x) => 'extra:' + x.attr === tgt)
+  // A value from the file that doesn't match any configured option (typo, or
+  // set before Options existed) is kept as an extra, clearly-marked choice
+  // instead of silently switching to the first configured one on save.
+  const isKnownOption = (a, v) => (a.options || []).some((o) => o.value === (v ?? ''))
   const targetOptions = [
     ...CORE_TARGETS.map((c) => ({ value: c, label: c })),
     ...userAttrs.map((a) => ({ value: 'extra:' + a.attr, label: attrLabel(a) })),
@@ -299,7 +305,7 @@
   function targetHeading(tgt) {
     if (tgt === 'password') return t('Passwort')
     if (tgt.startsWith('extra:')) {
-      const a = userAttrs.find((x) => 'extra:' + x.attr === tgt)
+      const a = attrFor(tgt)
       return a ? attrLabel(a) : tgt.slice(6)
     }
     return tgt
@@ -513,6 +519,14 @@
                           {t('Verzeichnis:')} {dirUser(r).mail?.mail || t('ohne Mail')}
                         </div>
                       {/if}
+                    {:else if tgt.startsWith('extra:') && attrFor(tgt)?.options?.length}
+                      {@const a = attrFor(tgt)}
+                      <select class:invalid={fieldError(r, tgt)} title={fieldError(r, tgt)} bind:value={r.f.extra[a.attr]} onchange={revalidate}>
+                        {#if !isKnownOption(a, r.f.extra[a.attr])}
+                          <option value={r.f.extra[a.attr] ?? ''}>{t('Aktueller Wert (nicht in der Liste): {v}', { v: r.f.extra[a.attr] || '—' })}</option>
+                        {/if}
+                        {#each a.options as o (o.value)}<option value={o.value}>{optionLabel(o)}</option>{/each}
+                      </select>
                     {:else if tgt.startsWith('extra:')}
                       <input style="min-width:12ch" class:invalid={fieldError(r, tgt)} title={fieldError(r, tgt)} bind:value={r.f.extra[tgt.slice(6)]} oninput={revalidate} />
                     {:else}

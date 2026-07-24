@@ -7,6 +7,13 @@
   let groups = $state([])
   const userAttrs = app.meta?.userAttrs || []
   const attrLabel = (a) => (i18n.lang === 'de' ? a.labelDe : a.labelEn) || a.attr
+  // Show the configured option's label instead of the raw LDAP value; an
+  // unrecognized stored value (set before Options existed, or by another
+  // tool) falls back to showing it as-is.
+  const extraDisplay = (a, v) => {
+    const o = (a.options || []).find((o) => o.value === v)
+    return o ? (i18n.lang === 'de' ? o.labelDe : o.labelEn) || o.value : v
+  }
   // uid and cn are the identical value when the directory names entries by cn.
   const idAttrIsCN = app.meta?.userIdAttr === 'cn'
 
@@ -48,7 +55,7 @@
           {/if}
           {#each userAttrs as a (a.attr)}
             {#if user.extra?.[a.attr]}
-              <tr><th>{attrLabel(a)}</th><td>{user.extra[a.attr]}</td></tr>
+              <tr><th>{attrLabel(a)}</th><td>{extraDisplay(a, user.extra[a.attr])}</td></tr>
             {/if}
           {/each}
         </tbody>

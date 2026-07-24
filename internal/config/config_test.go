@@ -77,6 +77,49 @@ func TestValidateUserAttrs(t *testing.T) {
 	}
 }
 
+func TestValidateUserAttrOptions(t *testing.T) {
+	c := validBase()
+	c.UserAttrs = []UserAttr{{
+		Attr: "destinationIndicator",
+		Options: []UserAttrOption{
+			{Value: "", LabelDE: "Alle"},
+			{Value: "HideExternally", LabelDE: "Nur lokal"},
+			{Value: "HideCompletely", LabelDE: "Keine Suche"},
+		},
+	}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid options rejected: %v", err)
+	}
+
+	c = validBase()
+	c.UserAttrs = []UserAttr{{
+		Attr: "destinationIndicator",
+		Options: []UserAttrOption{
+			{Value: "HideExternally"},
+			{Value: "HideExternally"},
+		},
+	}}
+	if err := c.Validate(); err == nil {
+		t.Fatal("duplicate option value should be rejected")
+	}
+}
+
+func TestUserAttrOptionLabelAndHasOption(t *testing.T) {
+	a := UserAttr{Attr: "destinationIndicator", Options: []UserAttrOption{
+		{Value: "", LabelDE: "Alle", LabelEN: "All"},
+		{Value: "HideExternally", LabelDE: "Nur lokal"},
+	}}
+	if !a.HasOption("") || !a.HasOption("HideExternally") {
+		t.Fatal("HasOption should match configured values")
+	}
+	if a.HasOption("HideCompletely") {
+		t.Fatal("HasOption should reject an unconfigured value")
+	}
+	if a.Options[1].Label("en") != "Nur lokal" {
+		t.Fatal("UserAttrOption.Label should fall back to the other language")
+	}
+}
+
 func TestUserAttrLabel(t *testing.T) {
 	a := UserAttr{Attr: "st", LabelDE: "Bundesland", LabelEN: "State"}
 	if a.Label("de") != "Bundesland" || a.Label("en") != "State" {

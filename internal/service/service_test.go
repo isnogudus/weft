@@ -176,6 +176,46 @@ func TestCreateUserExtraAttrs(t *testing.T) {
 	}
 }
 
+func TestCreateUserRejectsValueOutsideConfiguredOptions(t *testing.T) {
+	cfg := config.Default()
+	cfg.BaseDN = "dc=example,dc=org"
+	cfg.UserAttrs = []config.UserAttr{{
+		Attr: "destinationIndicator",
+		Options: []config.UserAttrOption{
+			{Value: ""},
+			{Value: "HideExternally"},
+			{Value: "HideCompletely"},
+		},
+	}}
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10005}, idalloc.Range{Min: 20000, Max: 20005})
+	f.AddGroup(directory.Group{CN: "users", GIDNumber: 20000})
+	admin, err := f.BindAdmin(context.Background(), "rootpw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(cfg)
+	ctx := context.Background()
+
+	_, err = s.CreateUser(ctx, admin, NewUser{
+		UID: "dora", CN: "Dora", SN: "D", Password: "longenoughpw!",
+		Extra: map[string]string{"destinationIndicator": "SomethingElse"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "destinationIndicator") {
+		t.Fatalf("expected an out-of-options error, got %v", err)
+	}
+
+	u, err := s.CreateUser(ctx, admin, NewUser{
+		UID: "dora", CN: "Dora", SN: "D", Password: "longenoughpw!",
+		Extra: map[string]string{"destinationIndicator": "HideExternally"},
+	})
+	if err != nil {
+		t.Fatalf("configured option value should be accepted: %v", err)
+	}
+	if u.Extra["destinationIndicator"] != "HideExternally" {
+		t.Fatalf("extra not stored: %v", u.Extra)
+	}
+}
+
 func TestCreateUserRejectsBadUID(t *testing.T) {
 	s, c := setup(t)
 	_, err := s.CreateUser(context.Background(), c, NewUser{

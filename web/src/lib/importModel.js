@@ -324,8 +324,11 @@ export function validateRow(f, ctx, opts = {}) {
   }
 
   for (const a of meta.userAttrs ?? []) {
-    if (a.required && !(f.extra?.[a.attr] ?? '').trim()) {
+    const v = (f.extra?.[a.attr] ?? '').trim()
+    if (a.required && !v) {
       errors['extra:' + a.attr] = 'Pflichtfeld'
+    } else if (v && a.options?.length && !a.options.some((o) => o.value === v)) {
+      errors['extra:' + a.attr] = 'ungültiger Wert'
     }
   }
 

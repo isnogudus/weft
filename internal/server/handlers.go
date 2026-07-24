@@ -130,8 +130,15 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	c := s.cfg
 	attrs := make([]userAttrDTO, 0, len(c.UserAttrs))
 	for _, a := range c.UserAttrs {
+		var opts []userAttrOptionDTO
+		if len(a.Options) > 0 {
+			opts = make([]userAttrOptionDTO, len(a.Options))
+			for i, o := range a.Options {
+				opts[i] = userAttrOptionDTO{Value: o.Value, LabelDE: o.Label("de"), LabelEN: o.Label("en")}
+			}
+		}
 		attrs = append(attrs, userAttrDTO{
-			Attr: a.Attr, LabelDE: a.Label("de"), LabelEN: a.Label("en"), Required: a.Required,
+			Attr: a.Attr, LabelDE: a.Label("de"), LabelEN: a.Label("en"), Required: a.Required, Options: opts,
 		})
 	}
 	writeJSON(w, http.StatusOK, metaDTO{

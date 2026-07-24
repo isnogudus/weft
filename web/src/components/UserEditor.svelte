@@ -35,6 +35,11 @@
   const userAttrs = app.meta?.userAttrs || []
   let extra = $state({ ...(user.extra || {}) })
   const attrLabel = (a) => (i18n.lang === 'de' ? a.labelDe : a.labelEn) || a.attr
+  const optionLabel = (o) => (i18n.lang === 'de' ? o.labelDe : o.labelEn) || o.value
+  // A value stored before Options was configured (or set by another tool)
+  // may not match any entry -- keep it as an extra, clearly-marked option
+  // instead of silently switching it to the first configured one on save.
+  const isKnownOption = (a, v) => (a.options || []).some((o) => o.value === (v ?? ''))
 
   let groups = $state([])
   let error = $state('')
@@ -159,7 +164,18 @@
       <fieldset>
         <legend>{t('Weitere Attribute')}</legend>
         {#each userAttrs as a (a.attr)}
-          <label><span>{attrLabel(a)}{a.required ? ' *' : ''}</span><input bind:value={extra[a.attr]} /></label>
+          <label><span>{attrLabel(a)}{a.required ? ' *' : ''}</span>
+            {#if a.options?.length}
+              <select bind:value={extra[a.attr]}>
+                {#if !isKnownOption(a, extra[a.attr])}
+                  <option value={extra[a.attr] ?? ''}>{t('Aktueller Wert (nicht in der Liste): {v}', { v: extra[a.attr] || '—' })}</option>
+                {/if}
+                {#each a.options as o (o.value)}<option value={o.value}>{optionLabel(o)}</option>{/each}
+              </select>
+            {:else}
+              <input bind:value={extra[a.attr]} />
+            {/if}
+          </label>
         {/each}
       </fieldset>
     {/if}

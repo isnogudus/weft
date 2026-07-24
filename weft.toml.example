@@ -120,6 +120,28 @@ admin_uid = "admin"
 # label_de = "URL"
 # label_en = "URL"
 #
+# [[user_attr]]
+# attr     = "destinationIndicator"  # opt a user out of cross-node/federated
+# label_de = "Externe Sichtbarkeit"  # search (e.g. twenty-search's Ldap-External
+# label_en = "External visibility"   # source filter) or out of search entirely.
+#
+#   # Options restricts the value to a fixed set, rendered as a dropdown
+#   # instead of free text. An option with value = "" clears the attribute.
+#   [[user_attr.options]]
+#   value    = ""
+#   label_de = "Alle (Standard)"
+#   label_en = "All (default)"
+#
+#   [[user_attr.options]]
+#   value    = "HideExternally"        # twenty-search's Ldap-External filter
+#   label_de = "Nur lokal"             # already honors this value
+#   label_en = "Local only"
+#
+#   [[user_attr.options]]
+#   value    = "HideCompletely"        # NOT YET enforced anywhere -- twenty-search's
+#   label_de = "Keine Suche"           # Ldap-Default source filter would need the
+#   label_en = "None"                  # same (!(destinationIndicator=...)) clause
+#
 # Attributes OUTSIDE the inetOrgPerson chain (e.g. "c"/countryName, or
 # site-specific ones like a radio call name) additionally need an auxiliary
 # objectClass whose schema is loaded on the server, listed in:
@@ -129,11 +151,6 @@ admin_uid = "admin"
 # attr     = "c"                # requires an auxiliary class -- NOT valid on plain inetOrgPerson
 # label_de = "Land"
 # label_en = "Country"
-#
-# [[user_attr]]
-# attr     = "destinationIndicator"  # "HideExternally" opts a user out of external indexing
-# label_de = "Externe Sichtbarkeit"
-# label_en = "External visibility"
 
 # Adds a "generate test users" option to the bulk import wizard: given a
 # first/last name and a count, it creates a block of synthetic users

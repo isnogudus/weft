@@ -109,6 +109,19 @@ describe('validateRow', () => {
     const long = { uid: 'anna', sn: 'M', password: 'ü'.repeat(40), extra: { st: 'NI' } }
     expect(validateRow(long, buildContext(meta, [], [], [long])).errors.password).toBeTruthy()
   })
+  it('rejects an extra-attribute value outside the configured options', () => {
+    const enumAttr = [{
+      attr: 'destinationIndicator',
+      options: [{ value: '' }, { value: 'HideExternally' }, { value: 'HideCompletely' }],
+    }]
+    const meta = { maxPasswordLength: 72, userAttrs: enumAttr }
+    const bad = { uid: 'anna', sn: 'M', extra: { destinationIndicator: 'Whatever' } }
+    expect(validateRow(bad, buildContext(meta, [], [], [bad])).errors['extra:destinationIndicator']).toBeTruthy()
+    const ok = { uid: 'anna', sn: 'M', extra: { destinationIndicator: 'HideExternally' } }
+    expect(validateRow(ok, buildContext(meta, [], [], [ok])).errors['extra:destinationIndicator']).toBeFalsy()
+    const empty = { uid: 'anna', sn: 'M', extra: { destinationIndicator: '' } }
+    expect(validateRow(empty, buildContext(meta, [], [], [empty])).errors['extra:destinationIndicator']).toBeFalsy()
+  })
 })
 
 describe('validateRow — allowDuplicateMail (generated test users)', () => {

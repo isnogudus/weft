@@ -224,6 +224,8 @@ const en = {
   'doppelt in der Datei': 'duplicate in the file',
   'bereits vergeben': 'already taken',
   'Pflichtfeld': 'required',
+  'ungültiger Wert': 'invalid value',
+  'Aktueller Wert (nicht in der Liste): {v}': 'Current value (not in the list): {v}',
 
   // Pagination (Users list)
   'Weiter': 'Next',
