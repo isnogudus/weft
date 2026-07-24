@@ -188,6 +188,8 @@ const en = {
   'Passwörter wurden generiert, wo die Datei keine enthielt; alle Felder sind editierbar.':
     'Passwords were generated where the file had none; every field is editable.',
   'Status': 'Status',
+  'Lade bestehende Benutzer …': 'Loading existing users …',
+  'Erzeuge Passwörter … {done}/{total}': 'Generating passwords … {done}/{total}',
   'Importiere … {done}/{total}': 'Importing … {done}/{total}',
   'Import starten ({n} Benutzer)': 'Start import ({n} users)',
   '„Import starten“ setzt beim fehlgeschlagenen Block fort.': '“Start import” resumes at the failed chunk.',

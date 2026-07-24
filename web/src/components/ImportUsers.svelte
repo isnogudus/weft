@@ -45,6 +45,17 @@
   let progress = $state(0)
   let existingUsers = []
   let usersByUid = new Map()
+  // Generated test users intentionally may share one mail address (several
+  // logins for the same real developer/tester) -- validateRow relaxes its
+  // mail-uniqueness checks for the batch when this is set.
+  let allowDuplicateMail = $state(false)
+
+  // finalizeRows progress: an indeterminate "fetching" phase (paging through
+  // existing users), then a determinate "generating passwords" count.
+  let finalizing = $state(false)
+  let finalizePhase = $state('') // fetch | passwords
+  let finalizeDone = $state(0)
+  let finalizeTotal = $state(0)
 
   // done step
   let pwUrl = $state('')
@@ -96,6 +107,7 @@
       error = t('Keine Spalte ist "uid" zugeordnet (oder alternativ Vor- und Nachname).')
       return
     }
+    allowDuplicateMail = false
     const dataRows = rawRows.slice(headerRow + 1)
     await finalizeRows(rowsToFields(dataRows, mapping))
   }
@@ -122,6 +134,7 @@
       }
       password = genPassword
     }
+    allowDuplicateMail = true
     await finalizeRows(generateTestUsers({
       givenName: genGivenName.trim(), sn: genSurname.trim(),
       start: Number(genStart) || 0, count: genCount,
@@ -149,6 +162,10 @@
   // generated) and runs the shared uid-collision resolution, password
   // generation and validation before showing the review table.
   async function finalizeRows(fields) {
+    finalizing = true
+    finalizePhase = 'fetch'
+    finalizeDone = 0
+    finalizeTotal = fields.length
     try {
       existingUsers = await fetchAllUsers()
       usersByUid = new Map(existingUsers.map((u) => [u.uid, u]))
@@ -156,19 +173,26 @@
       const resolved = resolveUids(fields, existingUsers)
       derivedCount = resolved.derived
       suffixCount = resolved.suffixed
-      rows = await Promise.all(fields.map(async (f, i) => ({
-        index: i,
-        f,
-        derived: derivedFlags[i],
-        password: f.password || await generatePassword(meta?.maxPasswordLength ?? 72),
-        check: null,
-        result: null,
-        attempted: false,
-      })))
+      finalizePhase = 'passwords'
+      rows = await Promise.all(fields.map(async (f, i) => {
+        const password = f.password || await generatePassword(meta?.maxPasswordLength ?? 72)
+        finalizeDone++
+        return {
+          index: i,
+          f,
+          derived: derivedFlags[i],
+          password,
+          check: null,
+          result: null,
+          attempted: false,
+        }
+      }))
       revalidate()
       step = 'review'
     } catch (err) {
       error = err.message || t('Fehlgeschlagen.')
+    } finally {
+      finalizing = false
     }
   }
 
@@ -189,7 +213,7 @@
   }
 
   function revalidate() {
-    const ctx = buildContext(meta ?? {}, existingUsers, groups, rows.map((r) => ({ ...r.f, password: r.password })))
+    const ctx = buildContext(meta ?? {}, existingUsers, groups, rows.map((r) => ({ ...r.f, password: r.password })), { allowDuplicateMail })
     rows.forEach((r, i) => {
       r.check = validateRow({ ...r.f, password: r.password }, ctx, { index: i })
     })
@@ -332,6 +356,16 @@
   }
 </script>
 
+{#snippet finalizingStatus()}
+  {#if finalizing}
+    <p class="muted">
+      {finalizePhase === 'fetch'
+        ? t('Lade bestehende Benutzer …')
+        : t('Erzeuge Passwörter … {done}/{total}', { done: finalizeDone, total: finalizeTotal })}
+    </p>
+  {/if}
+{/snippet}
+
 <div class="modal-backdrop" onclick={close}>
   <div class="modal wide" onclick={(e) => e.stopPropagation()}>
     <h2>{t('Benutzer importieren')}</h2>
@@ -364,8 +398,9 @@
           </label>
         {/if}
         {#if error}<p class="error">{error}</p>{/if}
+        {@render finalizingStatus()}
         <div class="row" style="justify-content:flex-end">
-          <button class="primary" onclick={generateAndReview}>{t('Generieren und prüfen')}</button>
+          <button class="primary" onclick={generateAndReview} disabled={finalizing}>{t('Generieren und prüfen')}</button>
         </div>
       {:else}
         <p class="muted">{t('CSV-, Excel- (.xlsx) oder Numbers-Datei wählen. Die Datei wird im Browser gelesen; erst der Import überträgt Daten.')}</p>
@@ -409,9 +444,10 @@
           </tbody>
         </table>
       </div>
+      {@render finalizingStatus()}
       <div class="row" style="justify-content:flex-end">
-        <button onclick={() => (step = 'file')}>{t('Zurück')}</button>
-        <button class="primary" onclick={toReview}>{t('Weiter zur Überprüfung')}</button>
+        <button onclick={() => (step = 'file')} disabled={finalizing}>{t('Zurück')}</button>
+        <button class="primary" onclick={toReview} disabled={finalizing}>{t('Weiter zur Überprüfung')}</button>
       </div>
     {:else if step === 'review'}
       <p class="muted">

@@ -216,7 +216,10 @@ function nextFreeUid(base, taken) {
 
 // buildContext precomputes the duplicate/conflict lookups for validateRow from
 // the current directory listing and the full set of parsed rows.
-export function buildContext(meta, existingUsers, groups, fields) {
+// opts.allowDuplicateMail relaxes the mail-uniqueness checks below -- set for
+// generator-sourced batches, where several test accounts intentionally share
+// one real person's mailbox (a developer or tester with multiple logins).
+export function buildContext(meta, existingUsers, groups, fields, opts = {}) {
   const count = (map, key) => map.set(key, (map.get(key) ?? 0) + 1)
   // First-occurrence index per value: duplicates are reported on the LATER
   // rows only; the first row of a duplicate pair is fine by itself.
@@ -241,6 +244,7 @@ export function buildContext(meta, existingUsers, groups, fields) {
   return {
     fileUidFirst,
     fileMailFirst,
+    allowDuplicateMail: !!opts.allowDuplicateMail,
     meta,
     groups,
     existingUids: new Set(existingUsers.map((u) => u.uid)),
@@ -302,8 +306,8 @@ export function validateRow(f, ctx, opts = {}) {
   if (f.mail && !errors.mail) {
     const owner = ctx.existingMailOwner?.get(mailKey)
     if (!/.+@.+\..+/.test(f.mail)) errors.mail = 'ungültige Adresse'
-    else if (mailDup) errors.mail = 'Adresse doppelt in der Datei — vermutlich doppelte Zeile'
-    else if (owner && owner !== f.uid) errors.mail = `Adresse gehört bereits ${owner}`
+    else if (!ctx.allowDuplicateMail && mailDup) errors.mail = 'Adresse doppelt in der Datei — vermutlich doppelte Zeile'
+    else if (!ctx.allowDuplicateMail && owner && owner !== f.uid) errors.mail = `Adresse gehört bereits ${owner}`
   }
 
   if (f.uidNumber) {

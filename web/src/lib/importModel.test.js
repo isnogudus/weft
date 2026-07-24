@@ -49,9 +49,9 @@ describe('detectHeaderRow', () => {
   })
 })
 
-function ctxFor(fields, existing = []) {
+function ctxFor(fields, existing = [], opts = {}) {
   const meta = { uidMin: 10000, uidMax: 10999, maxPasswordLength: 72, userAttrs }
-  return buildContext(meta, existing, [], fields)
+  return buildContext(meta, existing, [], fields, opts)
 }
 
 describe('validateRow', () => {
@@ -108,6 +108,29 @@ describe('validateRow', () => {
     expect(validateRow(f, ctx).errors['extra:st']).toBeTruthy()
     const long = { uid: 'anna', sn: 'M', password: 'ü'.repeat(40), extra: { st: 'NI' } }
     expect(validateRow(long, buildContext(meta, [], [], [long])).errors.password).toBeTruthy()
+  })
+})
+
+describe('validateRow — allowDuplicateMail (generated test users)', () => {
+  const rowAt = (i, mail) => ({ uid: `anna_m00${i}`, sn: 'Müller', givenName: 'Anna', mail, extra: {} })
+
+  it('blocks a mail duplicated within the batch unless allowDuplicateMail is set', () => {
+    const fields = [rowAt(0, 'anna.mueller@x.de'), rowAt(1, 'anna.mueller@x.de')]
+    const strict = ctxFor(fields)
+    expect(validateRow(fields[1], strict, { index: 1 }).errors.mail).toMatch(/doppelt/)
+
+    const relaxed = ctxFor(fields, [], { allowDuplicateMail: true })
+    expect(validateRow(fields[1], relaxed, { index: 1 }).errors.mail).toBeFalsy()
+  })
+
+  it('blocks a mail already owned by another directory user unless allowDuplicateMail is set', () => {
+    const row = rowAt(0, 'anna.mueller@x.de')
+    const existing = [{ uid: 'real.person', mail: { mail: 'anna.mueller@x.de' } }]
+    const strict = ctxFor([row], existing)
+    expect(validateRow(row, strict, { index: 0 }).errors.mail).toMatch(/gehört bereits real\.person/)
+
+    const relaxed = ctxFor([row], existing, { allowDuplicateMail: true })
+    expect(validateRow(row, relaxed, { index: 0 }).errors.mail).toBeFalsy()
   })
 })
 
