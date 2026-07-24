@@ -24,13 +24,20 @@ identifiers and API are English.
   only), a shared default primary group, bcrypt `{CRYPT}` passwords.
 - **Bilingual UI.** German/English, toggled in the header (DE/EN) and remembered
   per browser; defaults to the browser language.
+- **Paginated user list.** LDAP has no offset-based pagination, so weft fetches
+  and sorts the full (search-)filtered result set server-side and pages it
+  from there; a persistent "N users total" count stays visible independent of
+  the current search or page.
 - **Bulk import.** Upload a CSV, Excel (.xlsx) or Apple Numbers user list, map
   its columns, review/edit every row in the browser, then create the users.
   Files are parsed client-side; missing passwords are generated as memorable
   German passphrases and offered once as a CSV download (never stored). An
   optional test-user generator (`enable_test_user_generator`, off by default)
-  adds a second entry point that creates a block of synthetic users instead
-  of reading a file — for load-testing/demo data.
+  adds a second entry point that creates a block of synthetic users instead of
+  reading a file, optionally with one uniform password for the whole batch —
+  for load-testing/demo data. Generated rows may share a mail address (several
+  test logins for one real developer/tester); the reviewer only treats a
+  duplicate mail as an error for actual file imports.
 - **Configurable attributes.** `[[user_attr]]` entries in `weft.toml` add
   further single-valued attributes (telephoneNumber, ou, st, …) to the forms,
   the API and the import — e.g. everything a Matrix user-directory sync reads.
