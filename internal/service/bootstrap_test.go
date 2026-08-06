@@ -15,15 +15,15 @@ func TestBootstrap(t *testing.T) {
 	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10005}, idalloc.Range{Min: 20000, Max: 20005})
 	ctx := context.Background()
 
-	if ok, _ := f.Provisioned(ctx); ok {
+	admin, _ := f.BindAdmin(ctx, "rootpw")
+	if ok, _ := admin.Provisioned(ctx); ok {
 		t.Fatal("should start unprovisioned")
 	}
-	admin, _ := f.BindAdmin(ctx, "rootpw")
 	s := New(cfg)
 	if err := s.Bootstrap(ctx, admin); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := f.Provisioned(ctx); !ok {
+	if ok, _ := admin.Provisioned(ctx); !ok {
 		t.Fatal("should be provisioned after bootstrap")
 	}
 	g, err := admin.GetGroup(ctx, "users")

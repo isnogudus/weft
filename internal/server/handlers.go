@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -64,6 +65,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeDirError(w, err)
 		return
 	}
+	// Ask the same connection whether the base structure exists -- the only
+	// moment weft holds credentials for a read. A non-admin cannot be missing
+	// it: their own entry lives under the people OU, so a successful user bind
+	// proves the directory is provisioned.
+	needsSetup := false
+	if isAdmin {
+		ok, perr := c.Provisioned(r.Context())
+		if perr != nil {
+			// Don't block the login on a failed probe; the app itself will
+			// report the real error on the first operation.
+			log.Printf("login: provisioned check failed: %v", perr)
+		}
+		needsSetup = perr == nil && !ok
+	}
 	c.Close() // login only verifies; per-request binds happen later
 
 	s.login.reset(ip)
@@ -72,8 +87,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Sitzung konnte nicht erstellt werden")
 		return
 	}
+	sess.needsSetup = needsSetup
 	s.setSessionCookie(w, sess)
-	writeJSON(w, http.StatusOK, meDTO{UID: sess.uid, IsAdmin: sess.isAdmin, CSRF: sess.csrf})
+	writeJSON(w, http.StatusOK, meDTO{UID: sess.uid, IsAdmin: sess.isAdmin, CSRF: sess.csrf, NeedsSetup: sess.needsSetup})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +102,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
-	writeJSON(w, http.StatusOK, meDTO{UID: sess.uid, IsAdmin: sess.isAdmin, CSRF: sess.csrf})
+	writeJSON(w, http.StatusOK, meDTO{
+		UID: sess.uid, IsAdmin: sess.isAdmin, CSRF: sess.csrf, NeedsSetup: sess.needsSetup,
+	})
 }
 
 // handleMeProfile returns the logged-in user's own directory entry. Works for
@@ -193,46 +211,40 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 
 // --- setup ---
 
+// handleSetupStatus answers the SPA's first request: is the directory server
+// reachable at all, and under which identity does the admin bind? Whether the
+// base structure exists is deliberately NOT answered here -- that needs a read,
+// and an unauthenticated read is at the mercy of the server's ACLs (OpenLDAP
+// commonly denies anonymous access, which used to make weft mistake a
+// provisioned directory for a fresh one). The provisioned check happens after
+// login, over the bound connection; see handleLogin.
 func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
-	ok, err := s.dir.Provisioned(r.Context())
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"provisioned": false, "reachable": false})
-		return
+	reachable := true
+	if err := s.dir.Ping(r.Context()); err != nil {
+		log.Printf("setup/status: directory unreachable: %v", err)
+		reachable = false
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"provisioned": ok,
-		"reachable":   true,
-		"adminUid":    s.cfg.AdminUID,
-		"adminDn":     s.cfg.AdminBindDN(),
+	writeJSON(w, http.StatusOK, setupStatusDTO{
+		Reachable: reachable,
+		AdminUID:  s.cfg.AdminUID,
+		AdminDN:   s.cfg.AdminBindDN(),
 	})
 }
 
+// handleBootstrap creates the base structure. It runs on the admin session's
+// own connection -- no password is asked for a second time, and there is no
+// unauthenticated endpoint that would tell an anonymous caller whether a
+// guessed rootpw is correct.
 func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
-	if !s.login.allow(ip) {
-		writeError(w, http.StatusTooManyRequests, "zu viele Versuche")
-		return
-	}
-	if ok, err := s.dir.Provisioned(r.Context()); err == nil && ok {
-		writeError(w, http.StatusConflict, "bereits eingerichtet")
-		return
-	}
-	var req bootstrapReq
-	if err := readJSON(w, r, &req); err != nil || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "rootpw erforderlich")
-		return
-	}
-	c, err := s.dir.BindAdmin(r.Context(), req.Password)
-	if err != nil {
-		writeDirError(w, err)
-		return
-	}
-	defer c.Close()
-	if err := s.svc.Bootstrap(r.Context(), c); err != nil {
-		handleServiceError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	sess := sessionFromCtx(r.Context())
+	s.withConn(w, r, func(c directory.Conn) {
+		if err := s.svc.Bootstrap(r.Context(), c); err != nil {
+			handleServiceError(w, err)
+			return
+		}
+		sess.needsSetup = false
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
 }
 
 // --- users ---

@@ -21,6 +21,10 @@ type session struct {
 	isAdmin  bool
 	csrf     string
 	expires  time.Time
+	// needsSetup records the provisioned check made at login time (admins
+	// only): true means the base structure is missing and the SPA must run the
+	// setup wizard. Cleared once the bootstrap succeeds.
+	needsSetup bool
 }
 
 // connect opens a fresh directory connection bound as this session's identity.

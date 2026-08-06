@@ -102,7 +102,9 @@ olcAccess: {1}to *
 
 The rootdn bypasses ACLs and needs no rule. `{1}` grants authenticated users
 read (needed for the UI's own-profile and group views); tighten `by users read`
-to `by self read` if users must not see each other.
+to `by self read` if users must not see each other. Anonymous needs nothing
+beyond `auth` on `userPassword`: weft performs no unauthenticated reads, not
+even for the setup wizard (see [First-run setup](#first-run-setup)).
 
 ## Directory layout weft manages
 
@@ -236,11 +238,21 @@ API-Endpunkt: …"}` so they are distinguishable from a proxy's 404.
 
 ### First-run setup
 
-On first start weft checks whether `ou=people` exists. If not, the UI shows a
-**setup wizard**: enter the ldapd **rootpw** and weft binds once as the rootdn to
-create the base/suffix entry, `ou=people`, `ou=groups`, and the default `users`
-group. Afterwards log in as the admin uid (e.g. `admin`) with the rootpw. The
+Log in as the admin uid (e.g. `admin`) with the **rootpw** — that works on a
+completely empty directory, since the rootdn is synthetic and needs no entry.
+weft then checks on that authenticated connection whether `ou=people` exists;
+if it does not, the session opens the **setup wizard** instead of the app. One
+click creates the base/suffix entry, `ou=people`, `ou=groups` and the default
+`users` group — no second password prompt, the session already holds it. The
 wizard is idempotent, so it is safe to re-run.
+
+weft never reads the directory anonymously: before login it only checks that
+the server accepts a connection. (Up to 0.2.0 the wizard probed `ou=people`
+anonymously, which made servers that deny anonymous access — the ACLs
+recommended above among them — look permanently unprovisioned, so the wizard
+ran again after every successful bootstrap.) Note that `allow_admin = false`
+therefore also disables the wizard; provision such a directory before turning
+admin login off.
 
 The admin bind DN that weft uses (logged at startup, shown in the wizard) must
 equal ldapd's `rootdn`. If your `rootdn` is not `uid=<admin_uid>,ou=people,<base>`,
@@ -284,8 +296,8 @@ you may not have):
   rename those to whatever your reverse proxy and LDAP stack actually use.
 - **Self-contained demo stack**, bundled OpenLDAP, no external infra needed:
   `docker compose --profile demo up --build openldap weft-demo` — open
-  http://localhost:8080, run the setup wizard with the demo rootpw `adminpw`,
-  log in as `admin` / `adminpw`. Plain LDAP + plain HTTP — evaluation only.
+  http://localhost:8080, log in as `admin` / `adminpw` and run the setup
+  wizard. Plain LDAP + plain HTTP — evaluation only.
 - **In-memory dev mode**, no LDAP server at all, e.g. to try the bulk-import
   wizard: `docker compose --profile dev up --build weft-dev` — open
   http://localhost:8080, log in as `admin` / `rootpw`. Data lives only in the
@@ -420,8 +432,10 @@ GET/POST /groups       DELETE /groups/{cn}
 POST /groups/{cn}/members     DELETE /groups/{cn}/members/{uid}
 ```
 
-`/users*` and `/groups*` are admin-only; `/me*` is available to every
-authenticated user.
+`/users*`, `/groups*` and `/setup/bootstrap` are admin-only; `/me*` is
+available to every authenticated user. `GET /setup/status` is the only
+unauthenticated endpoint besides `/login`, and it reveals nothing about the
+directory's contents: `{ reachable, adminUid, adminDn }`.
 
 `GET /users` supports `q` (search term), `page` (1-based, default 1) and
 `pageSize` (default 25, max 200), returning `{ users, total, page, pageSize }`.

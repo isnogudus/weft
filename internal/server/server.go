@@ -65,11 +65,11 @@ func (s *Server) routes() http.Handler {
 			writeError(w, http.StatusMethodNotAllowed, "Methode nicht erlaubt: "+r.Method+" "+r.URL.Path)
 		})
 
-		// Public endpoints.
+		// Public endpoints. Reachability only -- nothing here reads the
+		// directory, so no anonymous access is required of the LDAP server.
 		api.Post("/login", s.handleLogin)
 		api.Post("/logout", s.handleLogout)
 		api.Get("/setup/status", s.handleSetupStatus)
-		api.Post("/setup/bootstrap", s.handleBootstrap)
 
 		// Authenticated endpoints.
 		api.Group(func(a chi.Router) {
@@ -84,6 +84,8 @@ func (s *Server) routes() http.Handler {
 			// Admin-only management.
 			a.Group(func(adm chi.Router) {
 				adm.Use(s.requireAdmin)
+				adm.Post("/setup/bootstrap", s.handleBootstrap)
+
 				adm.Get("/users", s.handleListUsers)
 				adm.Post("/users", s.handleCreateUser)
 				adm.Post("/users/import", s.handleImportUsers)

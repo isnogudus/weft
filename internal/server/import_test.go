@@ -27,18 +27,6 @@ func importTestServer(t *testing.T, uidRange idalloc.Range) *httptest.Server {
 	return ts
 }
 
-func importAdmin(t *testing.T, ts *httptest.Server) *client {
-	t.Helper()
-	admin := newClient(t, ts.URL)
-	if resp, _ := admin.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"}); resp.StatusCode != 200 {
-		t.Fatalf("bootstrap: %d", resp.StatusCode)
-	}
-	if code := admin.login("admin", "rootpw"); code != 200 {
-		t.Fatalf("admin login: %d", code)
-	}
-	return admin
-}
-
 func row(i int, uid string) importRowReq {
 	return importRowReq{Row: i, createUserReq: createUserReq{
 		UID: uid, CN: "U " + uid, SN: uid, Password: "longenough-" + uid,
@@ -67,7 +55,7 @@ func wantStatuses(t *testing.T, res importRespDTO, want ...string) {
 
 func TestImportHappyPath(t *testing.T) {
 	ts := importTestServer(t, idalloc.Range{Min: 10000, Max: 10999})
-	admin := importAdmin(t, ts)
+	admin := adminClient(t, ts)
 
 	rows := []importRowReq{row(0, "anna"), row(1, "berta"), row(2, "clara")}
 	rows[1].POSIX = &posixReq{}
@@ -94,7 +82,7 @@ func TestImportHappyPath(t *testing.T) {
 
 func TestImportConflictAndRetry(t *testing.T) {
 	ts := importTestServer(t, idalloc.Range{Min: 10000, Max: 10999})
-	admin := importAdmin(t, ts)
+	admin := adminClient(t, ts)
 
 	admin.do(http.MethodPost, "/api/users", createUserReq{UID: "jdoe", CN: "J", SN: "D", Password: "longpassword12"})
 
@@ -112,9 +100,9 @@ func TestImportConflictAndRetry(t *testing.T) {
 
 func TestImportInvalidRowContinues(t *testing.T) {
 	ts := importTestServer(t, idalloc.Range{Min: 10000, Max: 10999})
-	admin := importAdmin(t, ts)
+	admin := adminClient(t, ts)
 
-	bad := row(0, "Über!") // invalid uid charset
+	bad := row(0, "Über!")                                      // invalid uid charset
 	rows := []importRowReq{bad, row(1, "anna"), row(2, "anna")} // row 2: duplicate in file
 	code, res := postImport(t, admin, rows)
 	if code != 200 {
@@ -136,7 +124,7 @@ func TestImportInvalidRowContinues(t *testing.T) {
 
 func TestImportRowCaps(t *testing.T) {
 	ts := importTestServer(t, idalloc.Range{Min: 10000, Max: 10999})
-	admin := importAdmin(t, ts)
+	admin := adminClient(t, ts)
 
 	if code, _ := postImport(t, admin, nil); code != http.StatusBadRequest {
 		t.Fatalf("0 rows: want 400, got %d", code)
@@ -152,7 +140,7 @@ func TestImportRowCaps(t *testing.T) {
 
 func TestImportChunksAllocateMonotonically(t *testing.T) {
 	ts := importTestServer(t, idalloc.Range{Min: 10000, Max: 10999})
-	admin := importAdmin(t, ts)
+	admin := adminClient(t, ts)
 
 	mkChunk := func(base int) []importRowReq {
 		rows := make([]importRowReq, 3)
@@ -178,7 +166,7 @@ func TestImportChunksAllocateMonotonically(t *testing.T) {
 
 func TestImportRangeExhaustedAbortsChunk(t *testing.T) {
 	ts := importTestServer(t, idalloc.Range{Min: 10000, Max: 10001}) // 2 free uids
-	admin := importAdmin(t, ts)
+	admin := adminClient(t, ts)
 
 	rows := make([]importRowReq, 4)
 	for i := range rows {
@@ -194,7 +182,7 @@ func TestImportRangeExhaustedAbortsChunk(t *testing.T) {
 
 func TestImportRequiresAdmin(t *testing.T) {
 	ts := importTestServer(t, idalloc.Range{Min: 10000, Max: 10999})
-	admin := importAdmin(t, ts)
+	admin := adminClient(t, ts)
 	admin.do(http.MethodPost, "/api/users", createUserReq{UID: "bob", CN: "B", SN: "B", Password: "longpassword12"})
 
 	bob := newClient(t, ts.URL)

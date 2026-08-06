@@ -8,15 +8,17 @@
   import AdminApp from './components/AdminApp.svelte'
   import SelfService from './components/SelfService.svelte'
 
+  // The pre-login status answers reachability only: whether the base structure
+  // exists is decided after login, on the authenticated connection (me.needsSetup),
+  // because an anonymous read may be denied by the directory's ACLs.
   async function boot() {
     app.loading = true
     try {
       const status = await api.get('/setup/status')
       app.reachable = status.reachable
-      app.provisioned = status.provisioned
       app.adminUid = status.adminUid || 'admin'
       app.adminDn = status.adminDn || ''
-      if (status.reachable && status.provisioned) {
+      if (status.reachable) {
         await loadSession()
       }
     } catch (e) {
@@ -55,10 +57,10 @@
       <button onclick={boot}>{t('Erneut versuchen')}</button>
     </div>
   </div>
-{:else if !app.provisioned}
-  <Setup onDone={boot} />
 {:else if !app.me}
   <Login onLogin={loadSession} />
+{:else if app.me.needsSetup}
+  <Setup onDone={loadSession} />
 {:else if app.me.isAdmin}
   <AdminApp />
 {:else}

@@ -54,19 +54,14 @@ const en = {
 
   // Setup
   'Ersteinrichtung': 'Initial setup',
-  'Die Grundstruktur (ou=people, ou=groups, Standardgruppe) wird einmalig angelegt. Dazu wird das':
-    'The base structure (ou=people, ou=groups, default group) is created once. This requires the',
-  'aus der': 'from',
-  'benötigt.': '.',
+  'Das Verzeichnis enthält die Grundstruktur noch nicht. Sie wird jetzt einmalig angelegt:':
+    'The directory does not contain the base structure yet. It will be created once, now:',
   'Wird eingerichtet …': 'Setting up …',
   'Einrichten': 'Set up',
   'Einrichtung fehlgeschlagen.': 'Setup failed.',
-  'Danach melden Sie sich als': 'Afterwards sign in as',
-  'mit dem rootpw an.': 'with the rootpw.',
-  'Der Admin bindet als': 'The admin binds as',
-  '– dies muss exakt dem': '— this must exactly match the',
-  'in der': 'in',
-  'entsprechen.': '.',
+  'Angemeldet als': 'Signed in as',
+  'bindet als': 'binds as',
+  'Vorhandene Einträge bleiben unverändert.': 'Existing entries are left untouched.',
 
   // AdminApp
   'Mein Passwort': 'My password',

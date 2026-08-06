@@ -190,24 +190,15 @@ func (d *Directory) BindAdmin(_ context.Context, password string) (directory.Con
 	return d.bind(d.cfg.AdminBindDN(), password, true)
 }
 
-// Provisioned checks (anonymously) whether ou=people exists under the base.
-func (d *Directory) Provisioned(_ context.Context) (bool, error) {
+// Ping reports reachability by opening and closing a connection. It performs
+// no bind and no search: the answer must not depend on ACLs, which may deny
+// anonymous access completely.
+func (d *Directory) Ping(_ context.Context) error {
 	c, err := d.dial()
 	if err != nil {
-		return false, fmt.Errorf("ldap: dial: %w", err)
+		return fmt.Errorf("ldap: dial: %w", err)
 	}
-	defer c.Close()
-	req := ldap.NewSearchRequest(
-		d.cfg.PeopleDN(), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
-		"(objectClass=organizationalUnit)", []string{"ou"}, nil)
-	res, err := c.Search(req)
-	if err != nil {
-		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
-			return false, nil
-		}
-		return false, fmt.Errorf("ldap: provisioned check: %w", err)
-	}
-	return len(res.Entries) > 0, nil
+	return c.Close()
 }
 
 // --- conn ---
@@ -222,6 +213,24 @@ type conn struct {
 func (c *conn) WhoAmI() string { return c.dn }
 func (c *conn) IsAdmin() bool  { return c.admin }
 func (c *conn) Close() error   { return c.lc.Close() }
+
+// Provisioned checks whether the people OU exists, over this bound connection.
+// A server that hides the entry from the bound identity is indistinguishable
+// from one where it is missing -- hence the check runs as the admin (rootdn),
+// which bypasses ACLs on both supported servers.
+func (c *conn) Provisioned(_ context.Context) (bool, error) {
+	req := ldap.NewSearchRequest(
+		c.d.cfg.PeopleDN(), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
+		"(objectClass=organizationalUnit)", []string{"ou"}, nil)
+	res, err := c.lc.Search(req)
+	if err != nil {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+			return false, nil
+		}
+		return false, fmt.Errorf("ldap: provisioned check: %w", err)
+	}
+	return len(res.Entries) > 0, nil
+}
 
 // mapErr translates ldap result codes into directory sentinel errors.
 func mapErr(err error) error {

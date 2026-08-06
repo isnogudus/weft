@@ -101,11 +101,7 @@ func (f *Fake) BindAdmin(_ context.Context, password string) (directory.Conn, er
 	return &conn{f: f, admin: true}, nil
 }
 
-func (f *Fake) Provisioned(_ context.Context) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.provisioned || f.ous["people"], nil
-}
+func (f *Fake) Ping(_ context.Context) error { return nil }
 
 // conn is a bound connection over the shared Fake store.
 type conn struct {
@@ -122,6 +118,12 @@ func (c *conn) WhoAmI() string {
 }
 func (c *conn) IsAdmin() bool { return c.admin }
 func (c *conn) Close() error  { return nil }
+
+func (c *conn) Provisioned(_ context.Context) (bool, error) {
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
+	return c.f.provisioned || c.f.ous["people"], nil
+}
 
 // ownsOrAdmin reports whether the connection may write the given uid's entry.
 func (c *conn) ownsOrAdmin(uid string) bool { return c.admin || c.boundUID == uid }

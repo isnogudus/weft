@@ -41,10 +41,10 @@ type Directory interface {
 	// BindAdmin binds as the configured admin DN (the ldapd rootdn).
 	BindAdmin(ctx context.Context, password string) (Conn, error)
 
-	// Provisioned reports whether the base structure exists. Used to decide
-	// whether the setup wizard must run. It binds anonymously or with a short
-	// read and does not require credentials beyond what the server allows.
-	Provisioned(ctx context.Context) (bool, error)
+	// Ping reports whether the directory server is reachable. It opens and
+	// closes a connection without binding and without searching, so its answer
+	// depends only on network/TLS, never on the server's ACLs.
+	Ping(ctx context.Context) error
 }
 
 // Conn is a connection bound as a specific identity. It is not safe for
@@ -54,6 +54,11 @@ type Conn interface {
 	WhoAmI() string
 	// IsAdmin reports whether this connection is bound as the admin (rootdn).
 	IsAdmin() bool
+
+	// Provisioned reports whether the base structure (the people OU) exists.
+	// It is answered over this bound connection -- weft never reads the
+	// directory anonymously, so servers may deny anonymous access entirely.
+	Provisioned(ctx context.Context) (bool, error)
 
 	// --- Users ---
 

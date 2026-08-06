@@ -30,7 +30,7 @@
 #
 #      docker compose --profile demo up --build openldap weft-demo
 #
-#    -> http://localhost:8080, setup wizard rootpw "adminpw", login admin/adminpw
+#    -> http://localhost:8080, login admin/adminpw, then run the setup wizard
 #    Talks plain LDAP internally and serves plain HTTP -- evaluation only.
 #
 # 3) In-memory dev mode, no LDAP server at all:

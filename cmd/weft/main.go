@@ -325,8 +325,9 @@ func logStartup(cfg config.Config) {
 		log.Printf("admin login: ENABLED -- uid %q binds as %q (must equal the %s rootdn)",
 			cfg.AdminUID, cfg.AdminBindDN(), cfg.Directory)
 	} else {
-		log.Printf("admin login: DISABLED (allow_admin=false) -- self-service only; rootdn %q still used for setup/out-of-band",
+		log.Printf("admin login: DISABLED (allow_admin=false) -- self-service only; rootdn %q still used out-of-band",
 			cfg.AdminBindDN())
+		log.Print("NOTE: the setup wizard runs inside an admin session, so with allow_admin=false it is unreachable -- create the base structure manually (or enable admin login once) before users can sign in")
 	}
 	if !cfg.IsLDAPI() {
 		if cfg.InsecureSkipVerify {

@@ -11,6 +11,19 @@ type meDTO struct {
 	UID     string `json:"uid"`
 	IsAdmin bool   `json:"isAdmin"`
 	CSRF    string `json:"csrf"`
+	// NeedsSetup tells the SPA to show the setup wizard instead of the app:
+	// this admin is logged in, but the base structure is missing. Only ever
+	// true for admin sessions (see handleLogin).
+	NeedsSetup bool `json:"needsSetup"`
+}
+
+// setupStatusDTO is the pre-login answer: reachability plus the admin identity
+// shown on the login screen. It says nothing about the directory's contents --
+// weft performs no unauthenticated reads.
+type setupStatusDTO struct {
+	Reachable bool   `json:"reachable"`
+	AdminUID  string `json:"adminUid"`
+	AdminDN   string `json:"adminDn"`
 }
 
 type posixDTO struct {
@@ -199,10 +212,6 @@ type passwordReq struct {
 type loginReq struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-}
-
-type bootstrapReq struct {
-	Password string `json:"password"` // the ldapd rootpw
 }
 
 // metaDTO exposes non-sensitive defaults so the SPA can pre-fill forms.

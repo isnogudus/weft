@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **The setup wizard no longer loops on servers that deny anonymous access.**
+  Whether the base structure exists was probed on an *unauthenticated*
+  connection. OpenLDAP answers such a search by filtering the entry out rather
+  than erroring, so with ACLs like the ones this README recommends
+  (`by * none`), weft read a fully provisioned directory as a fresh one: the
+  bootstrap succeeded, the following status check still said "not provisioned",
+  and the wizard reappeared forever. The check now runs after login on the
+  bound connection, where the rootdn bypasses ACLs.
+
+### Changed
+- **The setup wizard moved inside the admin session.** Log in as the admin uid
+  first (the rootdn is synthetic, so this works on an empty directory); if the
+  base structure is missing, the session shows the wizard, which bootstraps
+  with the credentials it already holds instead of asking for the rootpw a
+  second time. `POST /api/setup/bootstrap` now requires an admin session, so
+  there is no longer an unauthenticated endpoint that confirms a guessed
+  rootpw. `GET /api/setup/status` reports reachability only (a connect, no
+  search, no bind) and no longer carries `provisioned`; `/api/me` gained
+  `needsSetup`.
+- With `allow_admin = false` the wizard is consequently unreachable — such a
+  directory must be provisioned beforehand. Logged as a note at startup.
+
 ## [0.2.0] - 2026-06-07
 
 ### Added

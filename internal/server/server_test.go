@@ -61,6 +61,21 @@ func (c *client) login(uid, pw string) int {
 	return resp.StatusCode
 }
 
+// adminClient logs in as the admin and runs the setup wizard's bootstrap, in
+// that order: since the wizard lives inside the admin session, there is no way
+// to provision the directory before logging in.
+func adminClient(t *testing.T, ts *httptest.Server) *client {
+	t.Helper()
+	admin := newClient(t, ts.URL)
+	if code := admin.login("admin", "rootpw"); code != 200 {
+		t.Fatalf("admin login: %d", code)
+	}
+	if resp, b := admin.do(http.MethodPost, "/api/setup/bootstrap", nil); resp.StatusCode != 200 {
+		t.Fatalf("bootstrap: %d %s", resp.StatusCode, b)
+	}
+	return admin
+}
+
 func testServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	cfg := config.Default()
@@ -75,15 +90,7 @@ func testServer(t *testing.T) *httptest.Server {
 
 func TestFullFlow(t *testing.T) {
 	ts := testServer(t)
-	admin := newClient(t, ts.URL)
-
-	// Bootstrap, then admin login.
-	if resp, _ := admin.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"}); resp.StatusCode != 200 {
-		t.Fatalf("bootstrap: %d", resp.StatusCode)
-	}
-	if code := admin.login("admin", "rootpw"); code != 200 {
-		t.Fatalf("admin login: %d", code)
-	}
+	admin := adminClient(t, ts)
 
 	// Create a POSIX user with defaults.
 	resp, b := admin.do(http.MethodPost, "/api/users", createUserReq{
@@ -119,9 +126,7 @@ func TestFullFlow(t *testing.T) {
 
 func TestNonAdminIsSelfServiceOnly(t *testing.T) {
 	ts := testServer(t)
-	admin := newClient(t, ts.URL)
-	admin.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"})
-	admin.login("admin", "rootpw")
+	admin := adminClient(t, ts)
 	admin.do(http.MethodPost, "/api/users", createUserReq{UID: "bob", CN: "Bob", SN: "B", Password: "longpassword12"})
 
 	bob := newClient(t, ts.URL)
@@ -164,21 +169,73 @@ func TestAdminLoginDisabled(t *testing.T) {
 	t.Cleanup(func() { ts.Close(); srv.Close() })
 
 	c := newClient(t, ts.URL)
-	// Bootstrap still works (it uses the rootpw directly, not the login path).
-	if resp, _ := c.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"}); resp.StatusCode != 200 {
-		t.Fatalf("bootstrap: %d", resp.StatusCode)
-	}
 	// The admin uid is rejected at login.
 	if code := c.login("admin", "rootpw"); code != http.StatusForbidden {
 		t.Fatalf("admin login with allow_admin=false: want 403, got %d", code)
+	}
+	// And with no admin session, the wizard is out of reach: this config
+	// requires a directory that is already provisioned (logged at startup).
+	if resp, _ := c.do(http.MethodPost, "/api/setup/bootstrap", nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bootstrap without session: want 401, got %d", resp.StatusCode)
+	}
+}
+
+// TestSetupRunsInsideAdminSession pins the property that motivated the design:
+// nothing about the directory's contents is exposed before login, and the
+// bootstrap is not an unauthenticated rootpw oracle.
+func TestSetupRunsInsideAdminSession(t *testing.T) {
+	ts := testServer(t)
+	c := newClient(t, ts.URL)
+
+	_, b := c.do(http.MethodGet, "/api/setup/status", nil)
+	var st setupStatusDTO
+	_ = json.Unmarshal(b, &st)
+	if !st.Reachable || st.AdminUID != "admin" {
+		t.Fatalf("setup status: %+v", st)
+	}
+	if bytes.Contains(b, []byte("provisioned")) {
+		t.Fatalf("pre-login status must not report directory contents: %s", b)
+	}
+	if resp, _ := c.do(http.MethodPost, "/api/setup/bootstrap", nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bootstrap without session: want 401, got %d", resp.StatusCode)
+	}
+
+	// The admin login reports the missing base structure; bootstrap clears it.
+	resp, b := c.do(http.MethodPost, "/api/login", loginReq{Username: "admin", Password: "rootpw"})
+	if resp.StatusCode != 200 {
+		t.Fatalf("admin login: %d %s", resp.StatusCode, b)
+	}
+	var me meDTO
+	_ = json.Unmarshal(b, &me)
+	c.csrf = me.CSRF
+	if !me.NeedsSetup {
+		t.Fatal("login on an unprovisioned directory should report needsSetup")
+	}
+	if resp, b := c.do(http.MethodPost, "/api/setup/bootstrap", nil); resp.StatusCode != 200 {
+		t.Fatalf("bootstrap: %d %s", resp.StatusCode, b)
+	}
+	_, b = c.do(http.MethodGet, "/api/me", nil)
+	_ = json.Unmarshal(b, &me)
+	if me.NeedsSetup {
+		t.Fatal("needsSetup should be cleared after bootstrap")
+	}
+
+	// A non-admin never sees the wizard: their entry proves provisioning.
+	c.do(http.MethodPost, "/api/users", createUserReq{UID: "bob", CN: "Bob", SN: "B", Password: "longpassword12"})
+	bob := newClient(t, ts.URL)
+	if code := bob.login("bob", "longpassword12"); code != 200 {
+		t.Fatalf("bob login: %d", code)
+	}
+	_, b = bob.do(http.MethodGet, "/api/me", nil)
+	_ = json.Unmarshal(b, &me)
+	if me.NeedsSetup {
+		t.Fatal("non-admin session should never need setup")
 	}
 }
 
 func TestMetaExposesSessionTimeout(t *testing.T) {
 	ts := testServer(t)
-	admin := newClient(t, ts.URL)
-	admin.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"})
-	admin.login("admin", "rootpw")
+	admin := adminClient(t, ts)
 	_, b := admin.do(http.MethodGet, "/api/meta", nil)
 	var m metaDTO
 	_ = json.Unmarshal(b, &m)
@@ -195,9 +252,7 @@ func TestMetaExposesSessionTimeout(t *testing.T) {
 
 func TestListUsersPagination(t *testing.T) {
 	ts := testServer(t)
-	admin := newClient(t, ts.URL)
-	admin.do(http.MethodPost, "/api/setup/bootstrap", bootstrapReq{Password: "rootpw"})
-	admin.login("admin", "rootpw")
+	admin := adminClient(t, ts)
 
 	// Names chosen so lexicographic uid order is "alice0".."alice9", "alice10"..
 	// is avoided -- pad so the expected order is unambiguous.
