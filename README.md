@@ -317,6 +317,16 @@ you may not have):
   session expires.
 - `allow_admin = false` runs a self-service-only instance: the admin uid cannot
   log in at all (no management UI). The active mode is logged at startup.
+- **No anonymous bind required.** weft never binds or searches anonymously: the
+  bind DN is built directly from the login name (no search-then-bind), every
+  request re-binds with the session's credentials, and the health check only
+  opens/closes the connection without binding. Empty passwords are rejected
+  before the bind, so "unauthenticated bind" (DN + empty password) cannot fake a
+  login. The directory server may therefore disallow anonymous access entirely,
+  as hardening guides (e.g. BSI IT-Grundschutz) recommend — for OpenLDAP:
+  `olcDisallows: bind_anon` plus `olcRequires: authc`. The `by anonymous auth`
+  ACL rule (see [OpenLDAP](#openldap)) stays compatible: it only permits the
+  password check during the bind operation itself, not anonymous reads.
 - Passwords are hashed client-side (bcrypt) before `userPassword` is written;
   inputs longer than 72 bytes are rejected (bcrypt truncation).
 - Certificate verification can be skipped for a self-signed LDAP server via
