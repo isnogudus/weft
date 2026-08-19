@@ -219,9 +219,65 @@ Copy [`weft.toml.example`](weft.toml.example) to `weft.toml` and edit. Then:
 
 Config precedence: defaults < TOML file < `WEFT_*` env vars < flags. Flags:
 `-config`, `-listen`, `-insecure` (skip LDAP TLS certificate verification —
-prefer `ca_cert_file`), `-dev`, `-version`. Key env overrides: `WEFT_LDAP_URL`,
-`WEFT_BASE_DN`, `WEFT_ADMIN_UID`, `WEFT_ADMIN_DN`, `WEFT_LISTEN_ADDR`,
-`WEFT_TLS_MODE`, `WEFT_SESSION_TIMEOUT`, `WEFT_INSECURE_SKIP_VERIFY`.
+prefer `ca_cert_file`), `-dev`, `-dev-rootpw`, `-version`.
+
+### Options
+
+Everything weft reads, with its built-in default. Options with no env variable
+are file-only — mount a TOML and pass `-config` (that is what the Docker
+examples do for the `[[user_attr]]` tables).
+
+| Option | Default | Env / flag | What it does |
+|---|---|---|---|
+| **Core** | | | |
+| `ldap_url` | — (required) | `WEFT_LDAP_URL` | `ldaps://`, `ldap://` or `ldapi:///path/to/socket` |
+| `base_dn` | — (required) | `WEFT_BASE_DN` | namespace suffix, e.g. `dc=example,dc=org` |
+| `directory` | `ldapd` | `WEFT_DIRECTORY` | server flavor: `ldapd` or `openldap` |
+| `user_id_attr` | `uid` | `WEFT_USER_ID_ATTR` | naming attribute for users: `uid` or `cn` |
+| **Transport security to the LDAP server** | | | |
+| `tls_mode` | `ldaps` | `WEFT_TLS_MODE` | `ldaps`, `starttls` or `plain`; ignored for `ldapi://` |
+| `ca_cert_file` | system trust store | `WEFT_CA_CERT_FILE` | CA that signed the LDAP server certificate |
+| `insecure_skip_verify` | `false` | `WEFT_INSECURE_SKIP_VERIFY`, `-insecure` | accept any LDAP certificate (warns at startup) |
+| `allow_plain_bind` | `false` | `WEFT_ALLOW_PLAIN_BIND` | required opt-in for `tls_mode = "plain"` |
+| **Admin identity** | | | |
+| `admin_uid` | `admin` | `WEFT_ADMIN_UID` | the login name that means "admin" |
+| `admin_dn` | `<user_id_attr>=<admin_uid>,ou=<people_ou>,<base_dn>` | `WEFT_ADMIN_DN` | the bind DN — must equal the server's rootdn |
+| `allow_admin` | `true` | `WEFT_ALLOW_ADMIN` | `false` = self-service only, no admin login, no wizard |
+| **Directory layout** | | | |
+| `people_ou` | `people` | — | OU holding user entries |
+| `groups_ou` | `groups` | — | OU holding group entries |
+| `primary_group` | `users` | — | default primary group created by the wizard |
+| **POSIX defaults** | | | |
+| `uid_min` / `uid_max` | `10000` / `59999` | — | allocation range for `uidNumber` |
+| `gid_min` / `gid_max` | `10000` / `59999` | — | allocation range for `gidNumber` |
+| `home_template` | `/home/{uid}` | — | `{uid}` is replaced by the login name |
+| `default_shell` | `/bin/ksh` | — | `loginShell` for new POSIX profiles |
+| **Mail** | | | |
+| `mail_attr` | `mail` | — | attribute holding the primary address |
+| `mail_alias_attr` | *(empty)* | — | attribute for aliases; empty = extra `mail_attr` values |
+| **Extra user attributes** | | | |
+| `[[user_attr]]` | — | — | table per attribute: `attr`, `label_de`, `label_en`, `required`, optional `[[user_attr.options]]` (`value`, `label_de`, `label_en`) for a fixed value set |
+| `user_extra_classes` | — | — | auxiliary objectClasses needed by those attributes |
+| `enable_test_user_generator` | `false` | `WEFT_TEST_USER_GENERATOR` | offer synthetic test users in the import wizard |
+| **Passwords** | | | |
+| `bcrypt_cost` | `12` | `WEFT_BCRYPT_COST` | cost of the `{CRYPT}$2b$` hash weft writes |
+| `max_password_length` | `72` | — | bcrypt truncates beyond 72 bytes |
+| **Sandbox (Unix; no-op elsewhere)** | | | |
+| `sandbox` | `true` | `WEFT_SANDBOX` | master switch for pledge/unveil + privsep confinement |
+| `chroot` | `/var/empty` | `WEFT_CHROOT` | worker chroot when started as root; empty disables |
+| `user` / `group` | `_weft` / *(user's primary)* | `WEFT_USER` / `WEFT_GROUP` | identity the worker drops to |
+| **Logging** | | | |
+| `log` | `stderr` | `WEFT_LOG` | destination: `stderr` or `syslog` — **not** a level |
+| `syslog_tag` | `weft` | `WEFT_SYSLOG_TAG` | program tag, facility `LOG_DAEMON` |
+| **HTTP server** | | | |
+| `listen_addr` | `127.0.0.1:8080` | `WEFT_LISTEN_ADDR`, `-listen` | address weft serves on |
+| `tls_cert_file` / `tls_key_file` | — | `WEFT_TLS_CERT_FILE` / `WEFT_TLS_KEY_FILE` | serve HTTPS directly instead of behind a proxy |
+| `session_timeout` | `30m` | `WEFT_SESSION_TIMEOUT` | idle expiry, sliding; drives the SPA's auto-logout |
+| `cookie_secure` | `true` | `WEFT_COOKIE_SECURE` | `false` only for local plain-HTTP dev |
+
+`-dev` runs against an in-memory fake directory with no LDAP server at all
+(admin password from `-dev-rootpw`, default `rootpw`); it is for development,
+never for a deployment.
 
 For a same-host deployment, point `ldap_url` at ldapd's Unix socket —
 `ldap_url = "ldapi:///var/run/ldapi"` (with `listen on "/var/run/ldapi"` in
@@ -424,6 +480,12 @@ write to the local syslog instead. Under privsep this is done right: the
 `syslogd` restarts (and falls back to stderr while syslog is unreachable) — and
 **forwards the chrooted worker's log lines** to it (the worker can't reach
 `/dev/log` from `/var/empty`, so it logs to stderr, which the monitor captures).
+
+There is **no log level**: `log` picks the destination, not a verbosity, and
+everything goes out at one severity (`LOG_INFO` towards syslog). weft logs
+lifecycle events, one line per HTTP request, and warnings — there is nothing to
+turn up or down. Filter or rotate on the receiving side (`svlogd`, `syslog.conf`)
+if that is too much.
 
 Credentials and password material are never logged. All logs — monitor and
 worker — end up in one stream.
