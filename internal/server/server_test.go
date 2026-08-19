@@ -326,3 +326,77 @@ func TestRequiresAuth(t *testing.T) {
 	}
 	_ = context.Background()
 }
+
+// TestHealth covers the endpoint a supervisor polls: the status code follows
+// the directory, the body describes nothing else, and no session is needed.
+func TestHealth(t *testing.T) {
+	cfg := config.Default()
+	cfg.BaseDN = "dc=example,dc=org"
+	cfg.CookieSecure = false
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10999}, idalloc.Range{Min: 20000, Max: 20999})
+	srv := New(cfg, f, nil)
+	srv.healthTTL = 0 // probe every call, so the test sees state changes at once
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(func() { ts.Close(); srv.Close() })
+
+	c := newClient(t, ts.URL)
+	resp, b := c.do(http.MethodGet, "/api/healthz", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("healthz: %d %s", resp.StatusCode, b)
+	}
+	var h healthDTO
+	_ = json.Unmarshal(b, &h)
+	if h.Status != "ok" || h.LDAP != "up" {
+		t.Fatalf("healthz body: %+v", h)
+	}
+	// Unauthenticated, so it must not describe the deployment.
+	for _, leak := range []string{cfg.BaseDN, cfg.AdminBindDN(), cfg.LDAPURL} {
+		if leak != "" && bytes.Contains(b, []byte(leak)) {
+			t.Fatalf("healthz body leaks %q: %s", leak, b)
+		}
+	}
+
+	f.SetUnreachable(true)
+	resp, b = c.do(http.MethodGet, "/api/healthz", nil)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("healthz while LDAP is down: want 503, got %d %s", resp.StatusCode, b)
+	}
+	_ = json.Unmarshal(b, &h)
+	if h.Status != "down" || h.LDAP != "down" {
+		t.Fatalf("healthz body while down: %+v", h)
+	}
+	// The SPA's own probe agrees, and recovery is picked up.
+	_, b = c.do(http.MethodGet, "/api/setup/status", nil)
+	var st setupStatusDTO
+	_ = json.Unmarshal(b, &st)
+	if st.Reachable {
+		t.Fatal("setup/status should report unreachable while LDAP is down")
+	}
+	f.SetUnreachable(false)
+	if resp, _ := c.do(http.MethodGet, "/api/healthz", nil); resp.StatusCode != 200 {
+		t.Fatalf("healthz after recovery: %d", resp.StatusCode)
+	}
+}
+
+// TestHealthProbeIsCached pins that polling does not mean one LDAP connection
+// per request: within the TTL the cached verdict is reused.
+func TestHealthProbeIsCached(t *testing.T) {
+	cfg := config.Default()
+	cfg.BaseDN = "dc=example,dc=org"
+	cfg.CookieSecure = false
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10999}, idalloc.Range{Min: 20000, Max: 20999})
+	srv := New(cfg, f, nil)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(func() { ts.Close(); srv.Close() })
+
+	c := newClient(t, ts.URL)
+	c.do(http.MethodGet, "/api/healthz", nil) // primes the cache
+	f.SetUnreachable(true)
+	if resp, _ := c.do(http.MethodGet, "/api/healthz", nil); resp.StatusCode != 200 {
+		t.Fatal("a probe within the TTL should reuse the cached verdict")
+	}
+	srv.healthTTL = 0
+	if resp, _ := c.do(http.MethodGet, "/api/healthz", nil); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatal("once the cache expires the probe must run again")
+	}
+}

@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -209,6 +211,41 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// --- health ---
+
+// handleHealth is the liveness/readiness probe for supervisors, container
+// runtimes and monitoring: 200 while the directory server answers, 503 while it
+// does not, so a poller can act on the status code alone. The body says no more
+// than that -- no admin DN, no LDAP address, no error text, since this endpoint
+// is unauthenticated; the reason is logged server-side instead.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if err := s.directoryUp(r.Context()); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, healthDTO{Status: "down", LDAP: "down"})
+		return
+	}
+	writeJSON(w, http.StatusOK, healthDTO{Status: "ok", LDAP: "up"})
+}
+
+// directoryUp probes the directory server, reusing a recent result for
+// healthTTL. Probes are polls: a container health check runs every few seconds
+// and the SPA calls /setup/status on every page load, so without the cache each
+// one would open its own LDAP connection. The lock is held across the dial on
+// purpose -- concurrent probes then coalesce into the one connection instead of
+// stampeding a server that may already be struggling.
+func (s *Server) directoryUp(ctx context.Context) error {
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+	if !s.healthAt.IsZero() && time.Since(s.healthAt) < s.healthTTL {
+		return s.healthErr
+	}
+	err := s.dir.Ping(ctx)
+	s.healthAt, s.healthErr = time.Now(), err
+	if err != nil {
+		applog.Warnf("health: directory unreachable: %v", err)
+	}
+	return err
+}
+
 // --- setup ---
 
 // handleSetupStatus answers the SPA's first request: is the directory server
@@ -219,11 +256,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 // provisioned directory for a fresh one). The provisioned check happens after
 // login, over the bound connection; see handleLogin.
 func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
-	reachable := true
-	if err := s.dir.Ping(r.Context()); err != nil {
-		applog.Warnf("setup/status: directory unreachable: %v", err)
-		reachable = false
-	}
+	reachable := s.directoryUp(r.Context()) == nil
 	writeJSON(w, http.StatusOK, setupStatusDTO{
 		Reachable: reachable,
 		AdminUID:  s.cfg.AdminUID,

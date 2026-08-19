@@ -6,6 +6,7 @@ package server
 import (
 	"io/fs"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +26,15 @@ type Server struct {
 	login    *rateLimiter
 	static   fs.FS
 	handler  http.Handler
+
+	// Cached result of the directory reachability probe, shared by /healthz
+	// and /setup/status. Both are unauthenticated and both are polled -- a
+	// container health check every few seconds, /setup/status on every page
+	// load -- so without this every poll would open an LDAP connection.
+	healthTTL time.Duration
+	healthMu  sync.Mutex
+	healthAt  time.Time
+	healthErr error
 }
 
 // New builds a Server. staticFS is the embedded frontend (its root containing
@@ -37,6 +47,8 @@ func New(cfg config.Config, dir directory.Directory, staticFS fs.FS) *Server {
 		sessions: newSessionStore(cfg.SessionTimeout.D()),
 		login:    newRateLimiter(5, time.Minute),
 		static:   staticFS,
+
+		healthTTL: 2 * time.Second,
 	}
 	s.handler = s.routes()
 	return s
@@ -69,6 +81,7 @@ func (s *Server) routes() http.Handler {
 		// directory, so no anonymous access is required of the LDAP server.
 		api.Post("/login", s.handleLogin)
 		api.Post("/logout", s.handleLogout)
+		api.Get("/healthz", s.handleHealth)
 		api.Get("/setup/status", s.handleSetupStatus)
 
 		// Authenticated endpoints.

@@ -510,6 +510,36 @@ lines are unprefixed and the others carry `debug: ` / `warning: ` / `error: `.
 Credentials and password material are never logged. All logs — monitor and
 worker — end up in one stream.
 
+## Health check
+
+`GET /api/healthz` is the probe for supervisors, container runtimes and
+monitoring. It reports whether weft can reach the directory server:
+
+```
+$ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/healthz
+200                       # 503 while the LDAP server is unreachable
+```
+
+```json
+{"status":"ok","ldap":"up"}
+```
+
+- **Key on the status code**, not the body: `200` healthy, `503` degraded.
+- The body says nothing else on purpose — no admin DN, no LDAP address, no
+  error text. The endpoint is unauthenticated; the reason for a failure is
+  logged server-side (at `warn`) instead.
+- The probe is a connect and disconnect, no bind and no search, so it needs no
+  credentials and no anonymous access, and it does not depend on the
+  directory's ACLs.
+- Results are cached for two seconds and shared with the SPA's
+  `/setup/status` call, so polling every few seconds does not mean one LDAP
+  connection per request. Concurrent probes coalesce into one dial.
+
+The Docker image ships a matching `HEALTHCHECK`, so `docker ps` /
+`docker compose ps` show healthy/unhealthy out of the box. Override it if you
+serve HTTPS directly (`tls_cert_file`) or listen on another port — the
+built-in check hardcodes `http://127.0.0.1:8080/api/healthz`.
+
 ## API sketch
 
 All under `/api`, JSON. Writes require the CSRF header.
@@ -517,7 +547,8 @@ All under `/api`, JSON. Writes require the CSRF header.
 ```
 POST /login            POST /logout           GET /me
 GET  /me/profile       GET  /me/groups        POST /me/password
-GET  /setup/status     POST /setup/bootstrap  GET /meta
+GET  /healthz          GET  /setup/status     GET /meta
+POST /setup/bootstrap
 GET/POST /users        GET/PUT/DELETE /users/{uid}
 POST /users/{uid}/password    POST /users/{uid}/rename    GET /users/{uid}/groups
 GET/POST /groups       DELETE /groups/{cn}
@@ -525,9 +556,10 @@ POST /groups/{cn}/members     DELETE /groups/{cn}/members/{uid}
 ```
 
 `/users*`, `/groups*` and `/setup/bootstrap` are admin-only; `/me*` is
-available to every authenticated user. `GET /setup/status` is the only
-unauthenticated endpoint besides `/login`, and it reveals nothing about the
-directory's contents: `{ reachable, adminUid, adminDn }`.
+available to every authenticated user. Besides `/login`, the unauthenticated
+endpoints are `GET /setup/status` — reachability plus the admin identity for
+the login screen, `{ reachable, adminUid, adminDn }`, nothing about the
+directory's contents — and `GET /healthz` (see below).
 
 `GET /users` supports `q` (search term), `page` (1-based, default 1) and
 `pageSize` (default 25, max 200), returning `{ users, total, page, pageSize }`.

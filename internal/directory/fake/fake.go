@@ -8,6 +8,7 @@ package fake
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ type Fake struct {
 	uidRange    idalloc.Range
 	gidRange    idalloc.Range
 	provisioned bool
+	unreachable bool
 }
 
 // New returns an empty, unprovisioned Fake with the given admin password and
@@ -53,6 +55,13 @@ func (f *Fake) SetProvisioned(v bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.provisioned = v
+}
+
+// SetUnreachable makes Ping fail, simulating a directory server that is down.
+func (f *Fake) SetUnreachable(v bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.unreachable = v
 }
 
 // AddUser injects a user with a bind password directly (test helper).
@@ -101,7 +110,14 @@ func (f *Fake) BindAdmin(_ context.Context, password string) (directory.Conn, er
 	return &conn{f: f, admin: true}, nil
 }
 
-func (f *Fake) Ping(_ context.Context) error { return nil }
+func (f *Fake) Ping(_ context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.unreachable {
+		return errors.New("fake: directory unreachable")
+	}
+	return nil
+}
 
 // conn is a bound connection over the shared Fake store.
 type conn struct {

@@ -38,6 +38,13 @@ COPY --from=build /out/weft /usr/local/bin/weft
 ENV WEFT_LISTEN_ADDR=0.0.0.0:8080
 EXPOSE 8080
 
+# /api/healthz answers 200 while the LDAP server is reachable, 503 while it is
+# not (the probe result is cached for a couple of seconds, so polling costs no
+# extra LDAP connections). Override this line when serving HTTPS directly
+# (tls_cert_file) or on a different port -- the URL is not derived from config.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:8080/api/healthz || exit 1
+
 # Started as root (the default), weft runs its privsep model: the monitor keeps
 # the LDAP dialing, the HTTP worker chroots to /var/empty and drops to _weft.
 # Run the container with a non-root user to skip chroot/privdrop entirely.

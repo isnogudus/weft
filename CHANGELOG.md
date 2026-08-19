@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`GET /api/healthz`** — a real health endpoint: `200 {"status":"ok",
+  "ldap":"up"}` while the directory server answers, `503` while it does not, so
+  a supervisor can act on the status code alone. The body deliberately says no
+  more than that (no admin DN, no LDAP address, no error text — the endpoint is
+  unauthenticated; the reason is logged at `warn`). The probe connects and
+  disconnects without binding or searching, so it needs no credentials and no
+  anonymous access. Results are cached briefly and shared with
+  `GET /api/setup/status`, so polling — and the SPA's own call on every page
+  load — no longer costs one LDAP connection per request; concurrent probes
+  coalesce into one dial. The Docker image gained a matching `HEALTHCHECK`.
 - **`log_level`** (`debug` | `info` | `warn` | `error`, default `info`; also
   `WEFT_LOG_LEVEL` / `-log-level`), independent of `log`, which keeps picking
   only the destination. `warn` switches the per-request access log off for a

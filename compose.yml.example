@@ -57,6 +57,9 @@ services:
     volumes:
       - ./weft.toml:/etc/weft/weft.toml:ro
     command: ["-config", "/etc/weft/weft.toml"]
+    # The image ships a HEALTHCHECK against /api/healthz (200 while LDAP is
+    # reachable, 503 otherwise), so `docker compose ps` shows healthy/unhealthy
+    # without extra configuration here.
 
   # --- 2) Self-contained demo stack (opt-in via --profile demo) ---
   openldap:

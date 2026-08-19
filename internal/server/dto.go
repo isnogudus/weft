@@ -17,6 +17,15 @@ type meDTO struct {
 	NeedsSetup bool `json:"needsSetup"`
 }
 
+// healthDTO is the /healthz body. Deliberately contentless beyond the verdict:
+// the endpoint is unauthenticated, so it must not describe the deployment.
+// Monitors should key on the HTTP status code; the fields are for humans
+// reading a curl.
+type healthDTO struct {
+	Status string `json:"status"` // "ok" | "down"
+	LDAP   string `json:"ldap"`   // "up" | "down"
+}
+
 // setupStatusDTO is the pre-login answer: reachability plus the admin identity
 // shown on the login screen. It says nothing about the directory's contents --
 // weft performs no unauthenticated reads.
