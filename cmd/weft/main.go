@@ -47,6 +47,7 @@ func run() error {
 		insecure    = flag.Bool("insecure", false, "do not verify the LDAP server's TLS certificate")
 		dev         = flag.Bool("dev", false, "run against an in-memory fake directory (no LDAP)")
 		devRootpw   = flag.String("dev-rootpw", "rootpw", "admin password in -dev mode")
+		logLevel    = flag.String("log-level", "", "log level: debug, info, warn, error")
 		showVersion = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
@@ -66,6 +67,16 @@ func run() error {
 	if *insecure {
 		cfg.InsecureSkipVerify = true
 	}
+	if *logLevel != "" {
+		cfg.LogLevel = *logLevel
+	}
+	// Set the threshold before anything logs. The privsep worker is re-exec'd
+	// with the same argv and environment, so it resolves the same level here.
+	lvl, err := applog.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		return err
+	}
+	applog.SetLevel(lvl)
 
 	assets, err := web.Assets()
 	if err != nil {
@@ -96,7 +107,7 @@ func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) erro
 	if dev {
 		cfg = devDefaults(cfg)
 		dir = fake.New(devRootpw, cfg.UIDRange(), cfg.GIDRange())
-		log.Printf("DEV MODE: in-memory fake directory, admin uid=%q password=%q", cfg.AdminUID, devRootpw)
+		applog.Infof("DEV MODE: in-memory fake directory, admin uid=%q password=%q", cfg.AdminUID, devRootpw)
 	} else {
 		if err := cfg.Validate(); err != nil {
 			return err
@@ -148,10 +159,10 @@ func runMonitor(cfg config.Config) error {
 		return fmt.Errorf("privsep: expected a TCP listener for %s", cfg.ListenAddr)
 	}
 	if os.Geteuid() == 0 {
-		log.Printf("privsep: monitor (pid %d) dialing LDAP for the worker; worker chroots to %q and drops to %q",
+		applog.Infof("privsep: monitor (pid %d) dialing LDAP for the worker; worker chroots to %q and drops to %q",
 			os.Getpid(), cfg.Chroot, cfg.User)
 	} else {
-		log.Printf("privsep: monitor (pid %d) dialing LDAP for the worker (not root: worker runs without chroot/privilege drop)",
+		applog.Infof("privsep: monitor (pid %d) dialing LDAP for the worker (not root: worker runs without chroot/privilege drop)",
 			os.Getpid())
 	}
 
@@ -198,7 +209,7 @@ func runWorker(cfg config.Config, assets fs.FS) error {
 	}); err != nil {
 		return fmt.Errorf("sandbox worker: %w", err)
 	}
-	log.Printf("privsep: worker (pid %d) serving on %s", os.Getpid(), cfg.ListenAddr)
+	applog.Infof("privsep: worker (pid %d) serving on %s", os.Getpid(), cfg.ListenAddr)
 
 	return serveAndWait(newHTTPServer(srv), ln, cfg.ListenAddr, w.Done())
 }
@@ -262,7 +273,7 @@ func setupLogging(cfg config.Config, role string) (logLine func(string), closeFn
 	}
 	sink, err := applog.NewSyslog(cfg.SyslogTag)
 	if err != nil {
-		log.Printf("syslog unavailable (%v); logging to stderr", err)
+		applog.Warnf("syslog unavailable (%v); logging to stderr", err)
 		return nil, noop
 	}
 	log.SetOutput(sink)
@@ -286,12 +297,12 @@ func newHTTPServer(srv *server.Server) *http.Server {
 func serveAndWait(httpSrv *http.Server, ln net.Listener, addr string, stopC <-chan struct{}) error {
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("weft %s listening on %s", version, addr)
+		applog.Infof("weft %s listening on %s", version, addr)
 		errCh <- httpSrv.Serve(ln)
 	}()
 
 	shutdown := func() error {
-		log.Print("shutting down")
+		applog.Infof("shutting down")
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return httpSrv.Shutdown(ctx)
@@ -316,25 +327,25 @@ func serveAndWait(httpSrv *http.Server, ln net.Listener, addr string, stopC <-ch
 // warnings (suppressed for the local ldapi socket).
 func logStartup(cfg config.Config) {
 	if cfg.IsLDAPI() {
-		log.Printf("LDAP server: %s (%s; local unix socket, secured by file permissions; tls_mode/allow_plain_bind ignored), base_dn=%q",
+		applog.Infof("LDAP server: %s (%s; local unix socket, secured by file permissions; tls_mode/allow_plain_bind ignored), base_dn=%q",
 			cfg.LDAPURL, cfg.Directory, cfg.BaseDN)
 	} else {
-		log.Printf("LDAP server: %s (%s, tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.Directory, cfg.TLSMode, cfg.BaseDN)
+		applog.Infof("LDAP server: %s (%s, tls_mode=%s, base_dn=%q)", cfg.LDAPURL, cfg.Directory, cfg.TLSMode, cfg.BaseDN)
 	}
 	if cfg.AllowAdmin {
-		log.Printf("admin login: ENABLED -- uid %q binds as %q (must equal the %s rootdn)",
+		applog.Infof("admin login: ENABLED -- uid %q binds as %q (must equal the %s rootdn)",
 			cfg.AdminUID, cfg.AdminBindDN(), cfg.Directory)
 	} else {
-		log.Printf("admin login: DISABLED (allow_admin=false) -- self-service only; rootdn %q still used out-of-band",
+		applog.Infof("admin login: DISABLED (allow_admin=false) -- self-service only; rootdn %q still used out-of-band",
 			cfg.AdminBindDN())
-		log.Print("NOTE: the setup wizard runs inside an admin session, so with allow_admin=false it is unreachable -- create the base structure manually (or enable admin login once) before users can sign in")
+		applog.Warnf("the setup wizard runs inside an admin session, so with allow_admin=false it is unreachable -- create the base structure manually (or enable admin login once) before users can sign in")
 	}
 	if !cfg.IsLDAPI() {
 		if cfg.InsecureSkipVerify {
-			log.Print("WARNING: insecure_skip_verify is enabled -- TLS certificates are not validated")
+			applog.Warnf("insecure_skip_verify is enabled -- TLS certificates are not validated")
 		}
 		if cfg.TLSMode == config.TLSPlain {
-			log.Print("WARNING: tls_mode=plain -- credentials are sent without TLS (dev only)")
+			applog.Warnf("tls_mode=plain -- credentials are sent without TLS (dev only)")
 		}
 	}
 }

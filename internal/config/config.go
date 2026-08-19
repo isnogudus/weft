@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"weft/internal/applog"
 	"weft/internal/idalloc"
 )
 
@@ -133,6 +134,11 @@ type Config struct {
 	// chrooted worker's log output to it.
 	Log       string `toml:"log"`        // "stderr" | "syslog"
 	SyslogTag string `toml:"syslog_tag"` // syslog program tag (default "weft")
+	// LogLevel is the severity threshold: "debug" | "info" (default) | "warn" |
+	// "error". It is orthogonal to Log, which picks the destination. "debug"
+	// adds a line per LDAP operation (DNs, filters, result counts -- never
+	// credentials); "warn" drops the per-request access log.
+	LogLevel string `toml:"log_level"`
 
 	// HTTP server.
 	ListenAddr     string   `toml:"listen_addr"`
@@ -241,6 +247,7 @@ func Default() Config {
 		Sandbox:           true,
 		Log:               "stderr",
 		SyslogTag:         "weft",
+		LogLevel:          "info",
 		Chroot:            "/var/empty",
 		User:              "_weft",
 		ListenAddr:        "127.0.0.1:8080",
@@ -427,6 +434,9 @@ func (c Config) Validate() error {
 	}
 	if c.Log != "stderr" && c.Log != "syslog" {
 		return fmt.Errorf("config: log must be \"stderr\" or \"syslog\"")
+	}
+	if _, err := applog.ParseLevel(c.LogLevel); err != nil {
+		return fmt.Errorf("config: log_level: %w", err)
 	}
 	if c.InsecureSkipVerify {
 		// not fatal, but the server logs a warning at startup

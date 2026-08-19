@@ -37,6 +37,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
+	"weft/internal/applog"
 	"weft/internal/config"
 	"weft/internal/directory"
 	"weft/internal/idalloc"
@@ -126,8 +127,10 @@ func buildTLSConfig(cfg config.Config) (*tls.Config, error) {
 func (d *Directory) dial() (*ldap.Conn, error) {
 	raw, err := d.dialRaw()
 	if err != nil {
+		applog.Debugf("ldap: dial %s (%v)", d.cfg.LDAPURL, err)
 		return nil, err
 	}
+	applog.Debugf("ldap: dial %s (tls_mode=%s)", d.cfg.LDAPURL, d.cfg.TLSMode)
 	return d.wrap(raw)
 }
 
@@ -171,12 +174,14 @@ func (d *Directory) bind(dn, password string, admin bool) (directory.Conn, error
 		return nil, fmt.Errorf("ldap: dial: %w", err)
 	}
 	if err := c.Bind(dn, password); err != nil {
+		applog.Debugf("ldap: bind %q%s", dn, errSuffix(err))
 		c.Close()
 		if ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
 			return nil, directory.ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("ldap: bind: %w", err)
 	}
+	applog.Debugf("ldap: bind %q (admin=%v)", dn, admin)
 	return &conn{d: d, lc: c, dn: dn, admin: admin}, nil
 }
 
@@ -214,6 +219,68 @@ func (c *conn) WhoAmI() string { return c.dn }
 func (c *conn) IsAdmin() bool  { return c.admin }
 func (c *conn) Close() error   { return c.lc.Close() }
 
+// --- operations (all LDAP traffic goes through these, so log_level = "debug"
+// shows exactly what weft asked the server, and what it got back) ---
+//
+// Passwords never reach these lines: userPassword is written pre-hashed, and
+// the value is not logged -- only the attribute names of a modify.
+
+func (c *conn) search(req *ldap.SearchRequest) (*ldap.SearchResult, error) {
+	res, err := c.lc.Search(req)
+	if applog.Enabled(applog.LevelDebug) {
+		n := 0
+		if res != nil {
+			n = len(res.Entries)
+		}
+		applog.Debugf("ldap: search base=%q scope=%d filter=%q -> %d entries%s",
+			req.BaseDN, req.Scope, req.Filter, n, errSuffix(err))
+	}
+	return res, err
+}
+
+func (c *conn) add(req *ldap.AddRequest) error {
+	err := c.lc.Add(req)
+	applog.Debugf("ldap: add %q%s", req.DN, errSuffix(err))
+	return err
+}
+
+func (c *conn) modify(req *ldap.ModifyRequest) error {
+	err := c.lc.Modify(req)
+	if applog.Enabled(applog.LevelDebug) {
+		applog.Debugf("ldap: modify %q attrs=%v%s", req.DN, modifiedAttrs(req), errSuffix(err))
+	}
+	return err
+}
+
+func (c *conn) del(dn string) error {
+	err := c.lc.Del(ldap.NewDelRequest(dn, nil))
+	applog.Debugf("ldap: delete %q%s", dn, errSuffix(err))
+	return err
+}
+
+func (c *conn) modifyDN(req *ldap.ModifyDNRequest) error {
+	err := c.lc.ModifyDN(req)
+	applog.Debugf("ldap: modifydn %q -> %q%s", req.DN, req.NewRDN, errSuffix(err))
+	return err
+}
+
+// modifiedAttrs lists the attribute names a modify touches -- names only, never
+// values, so userPassword hashes stay out of the log.
+func modifiedAttrs(req *ldap.ModifyRequest) []string {
+	out := make([]string, 0, len(req.Changes))
+	for _, ch := range req.Changes {
+		out = append(out, ch.Modification.Type)
+	}
+	return out
+}
+
+func errSuffix(err error) string {
+	if err == nil {
+		return ""
+	}
+	return fmt.Sprintf(" (%v)", err)
+}
+
 // Provisioned checks whether the people OU exists, over this bound connection.
 // A server that hides the entry from the bound identity is indistinguishable
 // from one where it is missing -- hence the check runs as the admin (rootdn),
@@ -222,7 +289,7 @@ func (c *conn) Provisioned(_ context.Context) (bool, error) {
 	req := ldap.NewSearchRequest(
 		c.d.cfg.PeopleDN(), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
 		"(objectClass=organizationalUnit)", []string{"ou"}, nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
 			return false, nil
@@ -277,7 +344,7 @@ func (c *conn) ListUsers(_ context.Context, term string) ([]directory.User, erro
 	req := ldap.NewSearchRequest(
 		c.d.cfg.PeopleDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
 		filter, c.userSearchAttrs(), nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -296,7 +363,7 @@ func (c *conn) GetUser(_ context.Context, uid string) (*directory.User, error) {
 	req := ldap.NewSearchRequest(
 		c.d.cfg.UserDN(uid), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
 		"(objectClass=inetOrgPerson)", c.userSearchAttrs(), nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -393,7 +460,7 @@ func (c *conn) CreateUser(_ context.Context, u directory.User, hashedPassword st
 	for _, ua := range c.d.cfg.UserAttrs {
 		addIf(req, ua.Attr, u.Extra[ua.Attr])
 	}
-	return mapErr(c.lc.Add(req))
+	return mapErr(c.add(req))
 }
 
 // addMail appends mail attributes to an AddRequest.
@@ -474,7 +541,7 @@ func (c *conn) UpdateUser(ctx context.Context, u directory.User) error {
 		}
 	}
 
-	return mapErr(c.lc.Modify(m))
+	return mapErr(c.modify(m))
 }
 
 // missingExtraClasses returns the configured auxiliary classes the entry does
@@ -483,7 +550,7 @@ func (c *conn) missingExtraClasses(uid string) ([]string, error) {
 	req := ldap.NewSearchRequest(
 		c.d.cfg.UserDN(uid), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
 		"(objectClass=*)", []string{"objectClass"}, nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -521,11 +588,11 @@ func (c *conn) modifyMail(m *ldap.ModifyRequest, mail *directory.MailProfile) {
 func (c *conn) SetPassword(_ context.Context, uid, hashedPassword string) error {
 	m := ldap.NewModifyRequest(c.d.cfg.UserDN(uid), nil)
 	m.Replace("userPassword", []string{hashedPassword})
-	return mapErr(c.lc.Modify(m))
+	return mapErr(c.modify(m))
 }
 
 func (c *conn) DeleteUser(ctx context.Context, uid string) error {
-	if err := mapErr(c.lc.Del(ldap.NewDelRequest(c.d.cfg.UserDN(uid), nil))); err != nil {
+	if err := mapErr(c.del(c.d.cfg.UserDN(uid))); err != nil {
 		return err
 	}
 	return c.removeFromAllGroups(ctx, uid)
@@ -542,7 +609,7 @@ func (c *conn) RenameUID(ctx context.Context, oldUID, newUID string) error {
 // memberUid values are plain uid strings, so the group fixup still follows.
 func (c *conn) renameModifyDN(ctx context.Context, oldUID, newUID string) error {
 	req := ldap.NewModifyDNRequest(c.d.cfg.UserDN(oldUID), c.d.cfg.UserRDN(newUID), true, "")
-	if err := mapErr(c.lc.ModifyDN(req)); err != nil {
+	if err := mapErr(c.modifyDN(req)); err != nil {
 		return err
 	}
 	groups, err := c.groupsWithMember(oldUID)
@@ -561,7 +628,7 @@ func (c *conn) renameCopyDelete(ctx context.Context, oldUID, newUID string) erro
 	src := ldap.NewSearchRequest(
 		c.d.cfg.UserDN(oldUID), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
 		"(objectClass=inetOrgPerson)", append(c.userSearchAttrs(), "userPassword"), nil)
-	res, err := c.lc.Search(src)
+	res, err := c.search(src)
 	if err != nil {
 		return mapErr(err)
 	}
@@ -578,7 +645,7 @@ func (c *conn) renameCopyDelete(ctx context.Context, oldUID, newUID string) erro
 		}
 		add.Attribute(a.Name, vals)
 	}
-	if err := mapErr(c.lc.Add(add)); err != nil {
+	if err := mapErr(c.add(add)); err != nil {
 		return err
 	}
 
@@ -591,7 +658,7 @@ func (c *conn) renameCopyDelete(ctx context.Context, oldUID, newUID string) erro
 		_ = c.AddMember(ctx, g, newUID)
 		_ = c.RemoveMember(ctx, g, oldUID)
 	}
-	return mapErr(c.lc.Del(ldap.NewDelRequest(c.d.cfg.UserDN(oldUID), nil)))
+	return mapErr(c.del(c.d.cfg.UserDN(oldUID)))
 }
 
 func (c *conn) CreateBaseDN(_ context.Context) error {
@@ -618,7 +685,7 @@ func (c *conn) CreateBaseDN(_ context.Context) error {
 	default:
 		return fmt.Errorf("ldap: cannot auto-create base entry %q (unsupported RDN type %q) -- create it manually", dn, attr)
 	}
-	return mapErr(c.lc.Add(req))
+	return mapErr(c.add(req))
 }
 
 func (c *conn) CreateOU(_ context.Context, name string) error {
@@ -626,7 +693,7 @@ func (c *conn) CreateOU(_ context.Context, name string) error {
 	req := ldap.NewAddRequest(dn, nil)
 	req.Attribute("objectClass", []string{"top", "organizationalUnit"})
 	req.Attribute("ou", []string{name})
-	return mapErr(c.lc.Add(req))
+	return mapErr(c.add(req))
 }
 
 // --- groups ---
@@ -635,7 +702,7 @@ func (c *conn) ListGroups(_ context.Context) ([]directory.Group, error) {
 	req := ldap.NewSearchRequest(
 		c.d.cfg.GroupsDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
 		"(objectClass=posixGroup)", []string{"cn", "gidNumber", "memberUid"}, nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -650,7 +717,7 @@ func (c *conn) GetGroup(_ context.Context, cn string) (*directory.Group, error) 
 	req := ldap.NewSearchRequest(
 		c.d.cfg.GroupDN(cn), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false,
 		"(objectClass=posixGroup)", []string{"cn", "gidNumber", "memberUid"}, nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -676,17 +743,17 @@ func (c *conn) CreateGroup(_ context.Context, g directory.Group) error {
 	if len(g.MemberUID) > 0 {
 		req.Attribute("memberUid", g.MemberUID)
 	}
-	return mapErr(c.lc.Add(req))
+	return mapErr(c.add(req))
 }
 
 func (c *conn) DeleteGroup(_ context.Context, cn string) error {
-	return mapErr(c.lc.Del(ldap.NewDelRequest(c.d.cfg.GroupDN(cn), nil)))
+	return mapErr(c.del(c.d.cfg.GroupDN(cn)))
 }
 
 func (c *conn) AddMember(_ context.Context, cn, uid string) error {
 	m := ldap.NewModifyRequest(c.d.cfg.GroupDN(cn), nil)
 	m.Add("memberUid", []string{uid})
-	err := c.lc.Modify(m)
+	err := c.modify(m)
 	if ldap.IsErrorWithCode(err, ldap.LDAPResultAttributeOrValueExists) {
 		return nil // already a member
 	}
@@ -696,7 +763,7 @@ func (c *conn) AddMember(_ context.Context, cn, uid string) error {
 func (c *conn) RemoveMember(_ context.Context, cn, uid string) error {
 	m := ldap.NewModifyRequest(c.d.cfg.GroupDN(cn), nil)
 	m.Delete("memberUid", []string{uid})
-	err := c.lc.Modify(m)
+	err := c.modify(m)
 	if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchAttribute) {
 		return nil // not a member
 	}
@@ -716,7 +783,7 @@ func (c *conn) EffectiveGroups(ctx context.Context, uid string) ([]directory.Gro
 	req := ldap.NewSearchRequest(
 		c.d.cfg.GroupsDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
 		filter, []string{"cn", "gidNumber", "memberUid"}, nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -733,7 +800,7 @@ func (c *conn) groupsWithMember(uid string) ([]string, error) {
 		c.d.cfg.GroupsDN(), ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
 		fmt.Sprintf("(&(objectClass=posixGroup)(memberUid=%s))", ldap.EscapeFilter(uid)),
 		[]string{"cn"}, nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -784,7 +851,7 @@ func (c *conn) collectNumbers(base, filter, attr string) ([]int, error) {
 	req := ldap.NewSearchRequest(
 		base, ldap.ScopeSingleLevel, ldap.NeverDerefAliases, 0, 0, false,
 		filter, []string{attr}, nil)
-	res, err := c.lc.Search(req)
+	res, err := c.search(req)
 	if err != nil {
 		return nil, mapErr(err)
 	}

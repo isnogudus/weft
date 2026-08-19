@@ -4,11 +4,12 @@ package sandbox
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/user"
 	"strconv"
 	"syscall"
+
+	"weft/internal/applog"
 )
 
 // chrootAndDrop performs the portable part of the sandbox, available on every
@@ -59,12 +60,12 @@ func chrootAndDrop(c Config) (chrooted bool, err error) {
 		if os.Geteuid() == 0 {
 			return chrooted, fmt.Errorf("sandbox: still root after privilege drop")
 		}
-		log.Printf("sandbox: dropped privileges to user %q (uid=%d gid=%d)%s",
+		applog.Infof("sandbox: dropped privileges to user %q (uid=%d gid=%d)%s",
 			c.User, uid, gid, chrootNote(chrooted, c.Chroot))
 	case root && c.Chroot != "":
-		log.Print("sandbox: chrooted as root with no user to drop to (set 'user')")
+		applog.Warnf("sandbox: chrooted as root with no user to drop to (set 'user')")
 	case !root && c.Chroot != "":
-		log.Print("sandbox: not started as root -- skipping chroot/privilege drop")
+		applog.Warnf("sandbox: not started as root -- skipping chroot/privilege drop")
 	}
 
 	return chrooted, nil

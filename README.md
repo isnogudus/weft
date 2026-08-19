@@ -219,7 +219,7 @@ Copy [`weft.toml.example`](weft.toml.example) to `weft.toml` and edit. Then:
 
 Config precedence: defaults < TOML file < `WEFT_*` env vars < flags. Flags:
 `-config`, `-listen`, `-insecure` (skip LDAP TLS certificate verification —
-prefer `ca_cert_file`), `-dev`, `-dev-rootpw`, `-version`.
+prefer `ca_cert_file`), `-log-level`, `-dev`, `-dev-rootpw`, `-version`.
 
 ### Options
 
@@ -267,7 +267,8 @@ examples do for the `[[user_attr]]` tables).
 | `chroot` | `/var/empty` | `WEFT_CHROOT` | worker chroot when started as root; empty disables |
 | `user` / `group` | `_weft` / *(user's primary)* | `WEFT_USER` / `WEFT_GROUP` | identity the worker drops to |
 | **Logging** | | | |
-| `log` | `stderr` | `WEFT_LOG` | destination: `stderr` or `syslog` — **not** a level |
+| `log` | `stderr` | `WEFT_LOG` | destination: `stderr` or `syslog` |
+| `log_level` | `info` | `WEFT_LOG_LEVEL`, `-log-level` | `debug`, `info`, `warn` or `error` |
 | `syslog_tag` | `weft` | `WEFT_SYSLOG_TAG` | program tag, facility `LOG_DAEMON` |
 | **HTTP server** | | | |
 | `listen_addr` | `127.0.0.1:8080` | `WEFT_LISTEN_ADDR`, `-listen` | address weft serves on |
@@ -481,11 +482,30 @@ write to the local syslog instead. Under privsep this is done right: the
 **forwards the chrooted worker's log lines** to it (the worker can't reach
 `/dev/log` from `/var/empty`, so it logs to stderr, which the monitor captures).
 
-There is **no log level**: `log` picks the destination, not a verbosity, and
-everything goes out at one severity (`LOG_INFO` towards syslog). weft logs
-lifecycle events, one line per HTTP request, and warnings — there is nothing to
-turn up or down. Filter or rotate on the receiving side (`svlogd`, `syslog.conf`)
-if that is too much.
+`log_level` sets how much is logged; it is independent of `log`, which only
+picks the destination. Default `info`:
+
+| Level | What it adds | Typical use |
+|---|---|---|
+| `debug` | one line per LDAP operation: dial, bind DN, search base/filter/result count, add/modify/delete DN | diagnosing directory problems |
+| `info` | lifecycle events and one line per HTTP request | the default |
+| `warn` | only problems — **no access log** | quiet production |
+| `error` | only failures | very quiet |
+
+```sh
+./weft -config weft.toml -log-level debug     # or WEFT_LOG_LEVEL=debug
+```
+
+Debug lines never contain credentials: `userPassword` is written pre-hashed and
+never logged, and a modify logs its attribute *names*, not their values. They do
+contain DNs and search filters — that is the point of the level, but it is also
+why `debug` is not a level to leave on. Under privilege separation both
+processes resolve the same level (the worker is re-exec'd with the same argv and
+environment), so LDAP debug lines from the worker appear in the same stream.
+
+Towards syslog the level also picks the severity (`LOG_DEBUG`/`LOG_INFO`/
+`LOG_WARNING`/`LOG_ERR`), so `syslog.conf` can filter on it. On stderr, `info`
+lines are unprefixed and the others carry `debug: ` / `warning: ` / `error: `.
 
 Credentials and password material are never logged. All logs — monitor and
 worker — end up in one stream.

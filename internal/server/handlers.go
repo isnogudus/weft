@@ -2,12 +2,12 @@ package server
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
+	"weft/internal/applog"
 	"weft/internal/directory"
 	"weft/internal/service"
 )
@@ -75,7 +75,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if perr != nil {
 			// Don't block the login on a failed probe; the app itself will
 			// report the real error on the first operation.
-			log.Printf("login: provisioned check failed: %v", perr)
+			applog.Warnf("login: provisioned check failed: %v", perr)
 		}
 		needsSetup = perr == nil && !ok
 	}
@@ -221,7 +221,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 	reachable := true
 	if err := s.dir.Ping(r.Context()); err != nil {
-		log.Printf("setup/status: directory unreachable: %v", err)
+		applog.Warnf("setup/status: directory unreachable: %v", err)
 		reachable = false
 	}
 	writeJSON(w, http.StatusOK, setupStatusDTO{

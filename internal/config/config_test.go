@@ -36,6 +36,22 @@ func TestValidate(t *testing.T) {
 	if err := c.Validate(); err == nil {
 		t.Fatal("missing admin_uid should fail")
 	}
+
+	c = validBase()
+	c.LogLevel = "verbose"
+	if err := c.Validate(); err == nil {
+		t.Fatal("unknown log_level should fail")
+	}
+	for _, lvl := range []string{"debug", "info", "warn", "error", ""} {
+		c = validBase()
+		c.LogLevel = lvl
+		if err := c.Validate(); err != nil {
+			t.Fatalf("log_level %q rejected: %v", lvl, err)
+		}
+	}
+	if Default().LogLevel != "info" {
+		t.Fatalf("default log_level = %q, want info", Default().LogLevel)
+	}
 }
 
 func TestValidateUserAttrs(t *testing.T) {

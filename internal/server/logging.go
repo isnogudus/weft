@@ -1,9 +1,10 @@
 package server
 
 import (
-	"log"
 	"net/http"
 	"time"
+
+	"weft/internal/applog"
 )
 
 // statusRecorder captures the response status code for access logging.
@@ -24,6 +25,6 @@ func requestLog(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond))
+		applog.Infof("%s %s -> %d (%s)", r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond))
 	})
 }

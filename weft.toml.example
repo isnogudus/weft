@@ -190,6 +190,17 @@ admin_uid = "admin"
 #   forwards the chrooted worker's log lines to it. Idiomatic for OpenBSD rc.d.
 # log = "stderr"
 # syslog_tag = "weft"
+#
+# log_level sets how much is logged (independent of the destination above):
+#   debug -- adds one line per LDAP operation: dial, bind DN, search
+#            base/filter/result count, add/modify/delete DN. Never credentials
+#            (a modify logs attribute names, not values), but DNs and filters --
+#            for diagnosing directory problems, not for permanent use.
+#   info  -- (default) lifecycle events and one line per HTTP request.
+#   warn  -- only problems; this is what switches the access log off.
+#   error -- only failures.
+# Towards syslog the level also selects the severity, so syslog.conf can filter.
+# log_level = "info"
 
 # --- HTTP server ---
 listen_addr = "127.0.0.1:8080"   # put relayd/httpd in front for TLS

@@ -4,10 +4,11 @@ package sandbox
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"golang.org/x/sys/unix"
+
+	"weft/internal/applog"
 )
 
 // ConfineWorker confines the privsep worker: chroot + privilege drop, then
@@ -33,7 +34,7 @@ func ConfineWorker(c Config) error {
 	if err := unix.PledgePromises(promises); err != nil {
 		return fmt.Errorf("pledge %q: %w", promises, err)
 	}
-	log.Printf("sandbox: worker pledge(%q); filesystem locked", promises)
+	applog.Infof("sandbox: worker pledge(%q); filesystem locked", promises)
 	return nil
 }
 
@@ -66,13 +67,13 @@ func ConfineMonitor(c Config) error {
 	if err := unix.PledgePromises(promises); err != nil {
 		return fmt.Errorf("pledge %q: %w", promises, err)
 	}
-	log.Printf("sandbox: monitor pledge(%q); filesystem restricted", promises)
+	applog.Infof("sandbox: monitor pledge(%q); filesystem restricted", promises)
 	return nil
 }
 
 // unveilIfExists unveils a path, ignoring it if it does not exist.
 func unveilIfExists(path, perms string) {
 	if err := unix.Unveil(path, perms); err != nil && !os.IsNotExist(err) {
-		log.Printf("sandbox: unveil %q: %v", path, err)
+		applog.Warnf("sandbox: unveil %q: %v", path, err)
 	}
 }

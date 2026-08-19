@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **`log_level`** (`debug` | `info` | `warn` | `error`, default `info`; also
+  `WEFT_LOG_LEVEL` / `-log-level`), independent of `log`, which keeps picking
+  only the destination. `warn` switches the per-request access log off for a
+  quiet production instance. `debug` adds one line per LDAP operation -- dial,
+  bind DN, search base/filter/result count, add/modify/delete DN -- which is
+  what makes a directory problem visible in weft's own log instead of only in
+  the server's. Credentials never appear: `userPassword` is written pre-hashed
+  and never logged, and a modify logs attribute names, not values. Towards
+  syslog the level now also selects the severity (`LOG_DEBUG`/`LOG_INFO`/
+  `LOG_WARNING`/`LOG_ERR`) rather than logging everything as INFO; on stderr,
+  non-info lines carry a `debug: ` / `warning: ` / `error: ` prefix. Under
+  privsep both processes resolve the same level, so the worker's LDAP debug
+  lines appear in the same stream.
+
 ### Fixed
 - **The setup wizard no longer loops on servers that deny anonymous access.**
   Whether the base structure exists was probed on an *unauthenticated*
