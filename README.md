@@ -44,6 +44,10 @@ identifiers and API are English.
 - **Process sandboxing.** After reading its files, when started as root weft
   `chroot(2)`s and drops privileges to `_weft` (Linux, macOS, FreeBSD, the BSDs);
   on OpenBSD it additionally applies `pledge(2)`/`unveil(2)`.
+- **Operable.** `GET /api/healthz` answers `200`/`503` depending on whether the
+  directory is reachable (the Docker image has a matching `HEALTHCHECK`), and
+  `log_level` turns the access log off (`warn`) or adds a line per LDAP
+  operation (`debug`) when a directory problem needs diagnosing.
 
 ## Authorization model (read this)
 
@@ -458,6 +462,11 @@ OpenBSD-specific.
    `127.0.0.1:8080`; the proxy should forward the real client IP via
    `X-Forwarded-For` so the login rate limit keys correctly. (For a standalone
    setup without a proxy, set `tls_cert_file`/`tls_key_file` in `weft.toml`.)
+   The example also carries a commented-out `check http "/api/healthz" code 200`
+   — useful with more than one weft host, but see the note there before enabling
+   it on a single-host table (weft's own error page is friendlier than relayd's).
+5. Point your monitoring at [`/api/healthz`](#health-check): `200` while weft
+   can reach the directory, `503` while it cannot.
 
 Under a supervisor instead of rc.d — e.g. **runit** — use
 [`contrib/runit/`](contrib/runit/): a `run` script that `exec`s weft as root in

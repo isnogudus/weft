@@ -7,6 +7,20 @@
 
 table <weft> { 127.0.0.1 }
 
+# Health-checked variant: relayd polls weft's /api/healthz, which answers 200
+# while the LDAP server is reachable and 503 while it is not, and takes the host
+# out of the table on failure. Worth enabling when the table holds more than one
+# weft host, so requests fail over to a healthy one.
+#
+# On a single-host table the trade-off runs the other way: relayd would answer
+# every request with its own error page for as long as LDAP is unreachable,
+# whereas weft itself renders "Verbindung fehlgeschlagen / Connection failed"
+# with a retry button and serves the login screen again the moment the directory
+# is back. Leave the plain table above in that case and monitor /api/healthz
+# out-of-band instead.
+#
+# table <weft> { 127.0.0.1 check http "/api/healthz" code 200 }
+
 http protocol "wefttls" {
 	tls keypair "weft.example.org"
 

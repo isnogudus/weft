@@ -16,7 +16,9 @@ All notable changes to this project are documented here. The format is based on
   anonymous access. Results are cached briefly and shared with
   `GET /api/setup/status`, so polling — and the SPA's own call on every page
   load — no longer costs one LDAP connection per request; concurrent probes
-  coalesce into one dial. The Docker image gained a matching `HEALTHCHECK`.
+  coalesce into one dial. The Docker image gained a matching `HEALTHCHECK`, and
+  `contrib/relayd.conf.example` carries the `check http "/api/healthz" code 200`
+  variant, commented out with the single-host trade-off spelled out.
 - **`log_level`** (`debug` | `info` | `warn` | `error`, default `info`; also
   `WEFT_LOG_LEVEL` / `-log-level`), independent of `log`, which keeps picking
   only the destination. `warn` switches the per-request access log off for a
