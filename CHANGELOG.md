@@ -4,7 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-08-20
+
+Upgrading from 0.2.0: the setup wizard now runs *inside* an admin session --
+log in with the rootpw first, then confirm the bootstrap. Anything scripted
+against the JSON API needs adjusting: `POST /api/setup/bootstrap` requires an
+admin session and no longer takes a password, and `GET /api/setup/status` no
+longer reports `provisioned` (that moved to `needsSetup` on `/api/me`). No
+configuration change is required, and nothing in the directory has to be
+touched.
 
 ### Added
 - **`GET /api/healthz`** — a real health endpoint: `200 {"status":"ok",
@@ -123,5 +131,6 @@ First public release.
 - Docs and OpenBSD operational examples: `weft.toml`, `ldapd.conf` (schema +
   ACLs), `rc.d` service, `relayd` TLS termination.
 
+[0.3.0]: https://github.com/isnogudus/weft/releases/tag/v0.3.0
 [0.2.0]: https://github.com/isnogudus/weft/releases/tag/v0.2.0
 [0.1.0]: https://github.com/isnogudus/weft/releases/tag/v0.1.0
