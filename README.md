@@ -62,6 +62,11 @@ ldapd can enforce honestly:
   bind DN at startup** and shows it in the setup wizard so you can match it to
   `rootdn`. The rootdn bypasses ACLs, so it can create/modify everything; it is
   synthetic and need not exist as an entry.
+  "Change password" in the admin session writes `userPassword` on `admin_dn`
+  itself. That works when `admin_dn` is a real entry (on OpenLDAP, e.g. a
+  dedicated admin account granted rights via `olcAccess`); a synthetic rootdn's
+  password lives in `ldapd.conf` (`rootpw`) or `olcRootPW` and weft says so
+  instead of changing it.
 - **Everyone else = self-service only.** They may view their own profile/groups
   and change their own password (`by self` write, restricted to `userPassword`).
 

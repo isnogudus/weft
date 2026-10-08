@@ -172,6 +172,10 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// rootPWMsg answers an admin password change that weft cannot carry out: the
+// admin DN is the server's rootdn, whose password is configuration, not data.
+const rootPWMsg = "das Admin-Passwort ist das rootpw des Verzeichnisservers und wird in dessen Konfiguration geändert (ldapd.conf rootpw / olcRootPW)"
+
 func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	var req passwordReq
@@ -201,7 +205,35 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 	check.Close()
 
 	s.withConn(w, r, func(c directory.Conn) {
-		if err := s.svc.SetPassword(r.Context(), c, sess.uid, req.NewPassword); err != nil {
+		// The admin's uid is only the login name; its entry is admin_dn, not
+		// UserDN(uid). A synthetic rootdn has no entry at all -- its password
+		// lives in the server's configuration and cannot be changed here.
+		var err error
+		if sess.isAdmin {
+			err = s.svc.SetAdminPassword(r.Context(), c, req.NewPassword)
+			if errors.Is(err, directory.ErrNotFound) {
+				writeError(w, http.StatusConflict, rootPWMsg)
+				return
+			}
+			// A rootdn that also exists as an entry (osixia/openldap creates
+			// one) still binds against rootpw/olcRootPW, not the entry's
+			// userPassword. Only report success if the new password binds;
+			// otherwise put the old one back so entry and rootpw stay in step.
+			if err == nil {
+				if check, berr := s.dir.BindAdmin(r.Context(), req.NewPassword); berr == nil {
+					check.Close()
+				} else {
+					if rerr := s.svc.SetAdminPassword(r.Context(), c, req.OldPassword); rerr != nil {
+						applog.Warnf("admin password: restoring the entry's old userPassword failed: %v", rerr)
+					}
+					writeError(w, http.StatusConflict, rootPWMsg)
+					return
+				}
+			}
+		} else {
+			err = s.svc.SetPassword(r.Context(), c, sess.uid, req.NewPassword)
+		}
+		if err != nil {
 			handleServiceError(w, err)
 			return
 		}

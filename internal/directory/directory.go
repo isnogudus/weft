@@ -76,6 +76,10 @@ type Conn interface {
 	// "{CRYPT}$2b$...."). weft always hashes client-side; the directory never
 	// hashes on write and never reads the hash back.
 	SetPassword(ctx context.Context, uid, hashedPassword string) error
+	// SetAdminPassword sets userPassword on the configured admin DN itself.
+	// That only works when admin_dn names a real entry; a synthetic rootdn
+	// (password in ldapd.conf / olcRootPW) has none and yields ErrNotFound.
+	SetAdminPassword(ctx context.Context, hashedPassword string) error
 
 	// RenameUID changes a user's uid. OpenLDAP renames via ModifyDN (atomic for
 	// the entry); ldapd has no ModifyDN, so there the implementation performs
