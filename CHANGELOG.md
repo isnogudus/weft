@@ -12,6 +12,14 @@ All notable changes to this project are documented here. The format is based on
   the admin session and refuse the change with 403, e.g. when the admin is the
   rootdn and its password lives in the server configuration anyway.
 
+### Changed
+- **Generated passwords are random instead of German passphrases.**
+  "Vorschlagen" and the bulk import now produce passwords like
+  `x8GG.JpJN.LN40.t7qx`, the method of password-generator: 16 characters from
+  lowercase, uppercase and digits, at least one of each, without `l`/`o`/`I`/`O`
+  and `y`/`z`, in dot-separated blocks of four (~92 bits). The passphrase word
+  lists (~200 KB) are gone from the frontend.
+
 ### Fixed
 - **The admin can change their own password again.** The change was written
   to `<user_id_attr>=<admin_uid>,ou=people,<base>` instead of the configured

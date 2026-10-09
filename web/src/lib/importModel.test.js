@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  UID_PATTERN, autoMap, buildContext, byteLen, deriveUid, detectHeaderRow,
+  UID_PATTERN, autoMap, buildContext, deriveUid, detectHeaderRow,
   normalizeHeader, resolveUids, rowsToFields, toRowPayload, validateRow,
 } from './importModel.js'
-import { generatePassword } from './password-gen.js'
 
 const userAttrs = [
   { attr: 'st', labelDe: 'Bundesland', labelEn: 'State' },
@@ -285,15 +284,5 @@ describe('resolveUids', () => {
       expect(f.uid).toMatch(UID_PATTERN)
     }
     expect(fields[1].uid.endsWith('2')).toBe(true)
-  })
-})
-
-describe('generatePassword', () => {
-  it('stays within the byte limit and matches the passphrase shape', async () => {
-    for (let i = 0; i < 500; i++) {
-      const p = await generatePassword(72)
-      expect(byteLen(p)).toBeLessThanOrEqual(72)
-      expect(p).toMatch(/^\S+-\S+-\S+-\d+$/)
-    }
   })
 })

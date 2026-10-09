@@ -129,7 +129,7 @@
       <label><span>{t('Passwort *')}</span>
         <span class="row" style="gap:0.4rem">
           <input type={showPw ? 'text' : 'password'} bind:value={password} style="flex:1" />
-          <button type="button" onclick={async () => { password = await generatePassword(meta.maxPasswordLength ?? 72); showPw = true }} title={t('Passphrase vorschlagen')}>{t('Vorschlagen')}</button>
+          <button type="button" onclick={() => { password = generatePassword(); showPw = true }} title={t('Passwort vorschlagen')}>{t('Vorschlagen')}</button>
         </span>
       </label>
     {/if}
