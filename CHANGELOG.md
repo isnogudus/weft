@@ -4,7 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-10-09
+
+Upgrading from 0.3.0: no configuration change is required, and nothing in the
+directory has to be touched. The new `admin_can_change_own_password` defaults
+to true, so the admin keeps "Mein Passwort". Passwords suggested by weft now
+look like `k3pa.7xmq.e2tn` instead of German passphrases. Anything scripted
+against `POST /api/me/password` as the admin should expect 409 (admin_dn is
+the rootdn), 502 (written but unconfirmed) and, with the option off, 403.
 
 ### Added
 - `admin_can_change_own_password` option (default true,
@@ -162,6 +169,7 @@ First public release.
 - Docs and OpenBSD operational examples: `weft.toml`, `ldapd.conf` (schema +
   ACLs), `rc.d` service, `relayd` TLS termination.
 
+[0.4.0]: https://github.com/isnogudus/weft/releases/tag/v0.4.0
 [0.3.0]: https://github.com/isnogudus/weft/releases/tag/v0.3.0
 [0.2.0]: https://github.com/isnogudus/weft/releases/tag/v0.2.0
 [0.1.0]: https://github.com/isnogudus/weft/releases/tag/v0.1.0
