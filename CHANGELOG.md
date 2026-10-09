@@ -14,9 +14,12 @@ All notable changes to this project are documented here. The format is based on
   targets `admin_dn`, and only reports success once the new password actually
   binds. When `admin_dn` is the server's rootdn -- with no entry, or with one
   that slapd/ldapd ignore for the bind, as in `osixia/openldap` -- weft refuses
-  with an explanation (change `rootpw` / `olcRootPW` on the server) and
-  restores the entry's old password, instead of claiming a change that does
-  not take effect and breaking the session.
+  with an explanation (change `rootpw` / `olcRootPW` on the server) and sets
+  the entry back to the password it just bound with, instead of claiming a
+  change that does not take effect and breaking the session. If the check
+  fails for another reason (directory unreachable), weft keeps the change and
+  reports it as unconfirmed rather than rolling back a change that may be in
+  effect.
 
 ## [0.3.0] - 2026-08-20
 

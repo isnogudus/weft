@@ -176,6 +176,10 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 // admin DN is the server's rootdn, whose password is configuration, not data.
 const rootPWMsg = "das Admin-Passwort ist das rootpw des Verzeichnisservers und wird in dessen Konfiguration geändert (ldapd.conf rootpw / olcRootPW)"
 
+// unverifiedPWMsg answers an admin password change that was written but could
+// not be verified because the directory failed during the check.
+const unverifiedPWMsg = "Passwort geschrieben, aber nicht bestätigt (Verzeichnisfehler) – bitte neu anmelden, um zu prüfen, welches Passwort gilt"
+
 func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	var req passwordReq
@@ -217,16 +221,30 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 			}
 			// A rootdn that also exists as an entry (osixia/openldap creates
 			// one) still binds against rootpw/olcRootPW, not the entry's
-			// userPassword. Only report success if the new password binds;
-			// otherwise put the old one back so entry and rootpw stay in step.
+			// userPassword. Only report success if the new password binds.
 			if err == nil {
-				if check, berr := s.dir.BindAdmin(r.Context(), req.NewPassword); berr == nil {
+				check, berr := s.dir.BindAdmin(r.Context(), req.NewPassword)
+				switch {
+				case berr == nil:
 					check.Close()
-				} else {
+				case errors.Is(berr, directory.ErrInvalidCredentials):
+					// Set the entry to the password BindAdmin accepted above. For
+					// a rootdn that is rootpw/olcRootPW, which need not be what
+					// the entry held before; weft never reads password hashes
+					// back, so this re-hashes the plaintext (bcrypt) rather than
+					// restoring the old value.
 					if rerr := s.svc.SetAdminPassword(r.Context(), c, req.OldPassword); rerr != nil {
-						applog.Warnf("admin password: restoring the entry's old userPassword failed: %v", rerr)
+						applog.Warnf("admin password: resetting the entry to the bind password failed: %v", rerr)
 					}
 					writeError(w, http.StatusConflict, rootPWMsg)
+					return
+				default:
+					// The directory failed for another reason (unreachable,
+					// timeout). The write went through, so a rollback would
+					// undo a change that may well be in effect; report the
+					// uncertainty instead. The session keeps the old password.
+					applog.Warnf("admin password: written, but the verification bind failed: %v", berr)
+					writeError(w, http.StatusBadGateway, unverifiedPWMsg)
 					return
 				}
 			}

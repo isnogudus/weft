@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
@@ -195,6 +196,47 @@ func TestAdminRootDNPasswordIsRefused(t *testing.T) {
 				t.Fatalf("old admin password: %d", code)
 			}
 		})
+	}
+}
+
+// testServerFake is testServer with a caller-supplied config and Fake, for
+// tests that tune either.
+func testServerFake(t *testing.T, cfg config.Config, f *fake.Fake) *httptest.Server {
+	t.Helper()
+	cfg.BaseDN = "dc=example,dc=org"
+	cfg.CookieSecure = false
+	srv := New(cfg, f, nil)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(func() { ts.Close(); srv.Close() })
+	return ts
+}
+
+// A verification bind that fails for a reason other than bad credentials says
+// nothing about rootdn vs. entry. The change must not be rolled back: on a real
+// admin entry it is in effect, and undoing it would be the actual mistake.
+func TestAdminPasswordUnverifiedIsNotRolledBack(t *testing.T) {
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10999}, idalloc.Range{Min: 20000, Max: 20999})
+	ts := testServerFake(t, config.Default(), f)
+	admin := adminClient(t, ts)
+
+	f.SetAdminBindFault(func(pw string) error {
+		if pw == "newadminpass56" {
+			return errors.New("fake: connection reset")
+		}
+		return nil
+	})
+	resp, b := admin.do(http.MethodPost, "/api/me/password", passwordReq{OldPassword: "rootpw", NewPassword: "newadminpass56"})
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("admin change own pw with failing check: want 502, got %d %s", resp.StatusCode, b)
+	}
+	f.SetAdminBindFault(nil)
+
+	again := newClient(t, ts.URL)
+	if code := again.login("admin", "newadminpass56"); code != 200 {
+		t.Fatalf("new admin password after unverified change: want 200, got %d", code)
+	}
+	if code := newClient(t, ts.URL).login("admin", "rootpw"); code != http.StatusUnauthorized {
+		t.Fatalf("old admin password after unverified change: want 401, got %d", code)
 	}
 }
 
