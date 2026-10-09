@@ -29,6 +29,8 @@ type Fake struct {
 	creds       map[string]string // uid -> plaintext bind password (unit tests)
 	hashes      map[string]string // uid -> userPassword value (e.g. {CRYPT}$2b$..)
 	adminPass   string
+	adminHash   string // set by SetAdminPassword; supersedes adminPass
+	adminMode   AdminMode
 	uidRange    idalloc.Range
 	gidRange    idalloc.Range
 	provisioned bool
@@ -48,6 +50,27 @@ func New(adminPass string, uidRange, gidRange idalloc.Range) *Fake {
 		uidRange:  uidRange,
 		gidRange:  gidRange,
 	}
+}
+
+// AdminMode selects what the admin DN is, which decides whether the admin can
+// change their own password.
+type AdminMode int
+
+const (
+	// AdminEntry: admin_dn is an ordinary entry; binds check its userPassword.
+	AdminEntry AdminMode = iota
+	// AdminRootSynthetic: a rootdn with no entry; writing it is "no such object".
+	AdminRootSynthetic
+	// AdminRootWithEntry: a rootdn that also exists as an entry. Writes
+	// succeed, but binds keep checking rootpw (slapd/ldapd behaviour).
+	AdminRootWithEntry
+)
+
+// SetAdminMode switches the admin DN between the AdminMode variants.
+func (f *Fake) SetAdminMode(m AdminMode) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.adminMode = m
 }
 
 // SetProvisioned marks the base structure as present (or absent).
@@ -104,7 +127,11 @@ func verifyCrypt(stored, plain string) bool {
 func (f *Fake) BindAdmin(_ context.Context, password string) (directory.Conn, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if password != f.adminPass {
+	ok := password == f.adminPass
+	if f.adminHash != "" && f.adminMode == AdminEntry {
+		ok = verifyCrypt(f.adminHash, password)
+	}
+	if !ok {
 		return nil, directory.ErrInvalidCredentials
 	}
 	return &conn{f: f, admin: true}, nil
@@ -225,6 +252,21 @@ func (c *conn) SetPassword(_ context.Context, uid, hashedPassword string) error 
 	}
 	c.f.hashes[uid] = hashedPassword
 	delete(c.f.creds, uid) // a reset supersedes any injected plaintext credential
+	return nil
+}
+
+// SetAdminPassword writes the admin entry's password; whether BindAdmin then
+// honours it depends on the AdminMode.
+func (c *conn) SetAdminPassword(_ context.Context, hashedPassword string) error {
+	c.f.mu.Lock()
+	defer c.f.mu.Unlock()
+	if !c.admin {
+		return directory.ErrPermission
+	}
+	if c.f.adminMode == AdminRootSynthetic {
+		return directory.ErrNotFound
+	}
+	c.f.adminHash = hashedPassword
 	return nil
 }
 

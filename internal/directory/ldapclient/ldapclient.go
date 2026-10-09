@@ -591,6 +591,12 @@ func (c *conn) SetPassword(_ context.Context, uid, hashedPassword string) error 
 	return mapErr(c.modify(m))
 }
 
+func (c *conn) SetAdminPassword(_ context.Context, hashedPassword string) error {
+	m := ldap.NewModifyRequest(c.d.cfg.AdminBindDN(), nil)
+	m.Replace("userPassword", []string{hashedPassword})
+	return mapErr(c.modify(m))
+}
+
 func (c *conn) DeleteUser(ctx context.Context, uid string) error {
 	if err := mapErr(c.del(c.d.cfg.UserDN(uid))); err != nil {
 		return err

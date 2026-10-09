@@ -146,6 +146,58 @@ func TestNonAdminIsSelfServiceOnly(t *testing.T) {
 	}
 }
 
+// The admin's own password is written to admin_dn, not to UserDN(admin_uid):
+// with admin_dn pointing at a real entry outside ou=people, the latter does not
+// exist and the change used to fail with "nicht gefunden".
+func TestAdminChangesOwnPassword(t *testing.T) {
+	ts := testServer(t)
+	admin := adminClient(t, ts)
+	if resp, b := admin.do(http.MethodPost, "/api/me/password", passwordReq{OldPassword: "rootpw", NewPassword: "newadminpass56"}); resp.StatusCode != 200 {
+		t.Fatalf("admin change own pw: %d %s", resp.StatusCode, b)
+	}
+	again := newClient(t, ts.URL)
+	if code := again.login("admin", "rootpw"); code != http.StatusUnauthorized {
+		t.Fatalf("old admin password: want 401, got %d", code)
+	}
+	if code := again.login("admin", "newadminpass56"); code != 200 {
+		t.Fatalf("new admin password: %d", code)
+	}
+}
+
+// When admin_dn is the server's rootdn, its password is rootpw/olcRootPW and
+// weft cannot change it -- whether or not the rootdn also exists as an entry.
+// The change must be refused, and the old password must keep working.
+func TestAdminRootDNPasswordIsRefused(t *testing.T) {
+	for name, mode := range map[string]fake.AdminMode{
+		"synthetic":  fake.AdminRootSynthetic,
+		"with entry": fake.AdminRootWithEntry,
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.BaseDN = "dc=example,dc=org"
+			cfg.CookieSecure = false
+			f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10999}, idalloc.Range{Min: 20000, Max: 20999})
+			f.SetAdminMode(mode)
+			srv := New(cfg, f, nil)
+			ts := httptest.NewServer(srv.Handler())
+			t.Cleanup(func() { ts.Close(); srv.Close() })
+
+			admin := adminClient(t, ts)
+			resp, b := admin.do(http.MethodPost, "/api/me/password", passwordReq{OldPassword: "rootpw", NewPassword: "newadminpass56"})
+			if resp.StatusCode != http.StatusConflict {
+				t.Fatalf("admin change own pw: want 409, got %d %s", resp.StatusCode, b)
+			}
+			// The session still works with the unchanged password.
+			if resp, b := admin.do(http.MethodGet, "/api/users", nil); resp.StatusCode != 200 {
+				t.Fatalf("admin session after refusal: %d %s", resp.StatusCode, b)
+			}
+			if code := newClient(t, ts.URL).login("admin", "rootpw"); code != 200 {
+				t.Fatalf("old admin password: %d", code)
+			}
+		})
+	}
+}
+
 func TestLoginRateLimit(t *testing.T) {
 	ts := testServer(t)
 	c := newClient(t, ts.URL)

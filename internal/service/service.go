@@ -210,6 +210,16 @@ func (s *Service) SetPassword(ctx context.Context, c directory.Conn, uid, newPas
 	return c.SetPassword(ctx, uid, hash)
 }
 
+// SetAdminPassword hashes a new password and writes it to the admin DN's own
+// entry (see directory.Conn.SetAdminPassword).
+func (s *Service) SetAdminPassword(ctx context.Context, c directory.Conn, newPassword string) error {
+	hash, err := password.Hash(newPassword, s.cfg.BcryptCost)
+	if err != nil {
+		return err
+	}
+	return c.SetAdminPassword(ctx, hash)
+}
+
 // CreateGroup allocates a gidNumber (unless overridden) and creates the group.
 func (s *Service) CreateGroup(ctx context.Context, c directory.Conn, cn string, gidOverride int) (*directory.Group, error) {
 	if err := validName("cn", cn); err != nil {

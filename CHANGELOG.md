@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **The admin can change their own password again.** The change was written
+  to `<user_id_attr>=<admin_uid>,ou=people,<base>` instead of the configured
+  `admin_dn`, so with an admin entry outside `ou=people` (e.g.
+  `cn=admin-dev,ou=admins,<base>`) it failed with "nicht gefunden". It now
+  targets `admin_dn`, and only reports success once the new password actually
+  binds. When `admin_dn` is the server's rootdn -- with no entry, or with one
+  that slapd/ldapd ignore for the bind, as in `osixia/openldap` -- weft refuses
+  with an explanation (change `rootpw` / `olcRootPW` on the server) and
+  restores the entry's old password, instead of claiming a change that does
+  not take effect and breaking the session.
+
 ## [0.3.0] - 2026-08-20
 
 Upgrading from 0.2.0: the setup wizard now runs *inside* an admin session --
