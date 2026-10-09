@@ -49,6 +49,16 @@ type Directory interface {
 
 // Conn is a connection bound as a specific identity. It is not safe for
 // concurrent use; each weft session owns one Conn. Close releases it.
+//
+// Password hashes are opaque to weft: it hashes client-side, writes the result
+// and leaves verification to the directory server, on bind. No method returns
+// userPassword, and weft never reads it to display, compare or verify it. The
+// one read is RenameUID on ldapd, which has no ModifyDN and must copy the value
+// verbatim into the new entry (as the rootdn, which bypasses ACLs). That is
+// why "by self =w" suffices on userPassword. It also means weft does not
+// restore an entry's previous userPassword value: putting an old password back
+// hashes the plaintext again (bcrypt), so the stored value changes even though
+// the password does not.
 type Conn interface {
 	// WhoAmI returns the DN this connection is bound as.
 	WhoAmI() string
@@ -74,7 +84,7 @@ type Conn interface {
 
 	// SetPassword sets userPassword to the given pre-hashed value (e.g.
 	// "{CRYPT}$2b$...."). weft always hashes client-side; the directory never
-	// hashes on write and never reads the hash back.
+	// hashes on write (see Conn on reading hashes back).
 	SetPassword(ctx context.Context, uid, hashedPassword string) error
 	// SetAdminPassword sets userPassword on the configured admin DN itself.
 	// That only works when admin_dn names a real entry; a synthetic rootdn

@@ -162,7 +162,7 @@ These shaped the design (checked against the ldapd source and man pages):
 |------|---------------------|
 | Ships `core`, `inetorgperson`, `nis` schemas and **enforces** loaded schema | Entries carry the full objectClass chain and all MUST attributes |
 | **No ModifyDN/ModRDN** operation | uid rename is done as *add-new → fix memberUid → delete-old* (not atomic) |
-| Bind verifies `{CRYPT}` (= bcrypt on OpenBSD), `{SHA}`, `{SSHA}` | weft writes `userPassword: {CRYPT}$2b$...`; it never reads or verifies hashes itself |
+| Bind verifies `{CRYPT}` (= bcrypt on OpenBSD), `{SHA}`, `{SSHA}` | weft writes `userPassword: {CRYPT}$2b$...`; it never verifies hashes itself and reads them only to copy them verbatim in a uid rename |
 | ACL subjects are only `any` / `self` / a single DN | Admin = rootdn; users limited to `by self` userPassword writes |
 | The namespace suffix entry is **not** auto-created | the setup wizard creates the base entry (`dc=`/`o=`/`ou=`) before the OUs, so the directory may start empty |
 
@@ -395,6 +395,14 @@ you may not have):
   password check during the bind operation itself, not anonymous reads.
 - Passwords are hashed client-side (bcrypt) before `userPassword` is written;
   inputs longer than 72 bytes are rejected (bcrypt truncation).
+- **Password hashes are opaque to weft.** It never reads `userPassword` to
+  display, compare or verify it; only the directory server verifies it, on
+  bind. The one read is the uid rename on ldapd, which has no ModifyDN and
+  copies the value verbatim into the new entry (as the rootdn). That keeps the
+  `by self =w` ACL sufficient. The flip side: weft does not restore an entry's
+  previous `userPassword` value. Where it puts an old password back, it hashes
+  the plaintext again, so e.g. an `{SSHA}` value becomes `{CRYPT}$2b$…` for the
+  same password.
 - Certificate verification can be skipped for a self-signed LDAP server via
   `insecure_skip_verify` / `-insecure` (a startup warning is logged); prefer
   pinning the CA with `ca_cert_file`.
