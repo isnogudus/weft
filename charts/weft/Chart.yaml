@@ -1,0 +1,17 @@
+apiVersion: v2
+name: weft
+description: Web UI to administer users and groups in an OpenLDAP or OpenBSD ldapd directory
+type: application
+# The release workflow packages the chart with --version and --app-version set
+# from the git tag, so these track the last release and only matter for local
+# installs from a checkout.
+version: 0.4.0
+appVersion: "0.4.0"
+home: https://github.com/isnogudus/weft
+sources:
+  - https://github.com/isnogudus/weft
+keywords:
+  - ldap
+  - openldap
+  - ldapd
+  - user-management

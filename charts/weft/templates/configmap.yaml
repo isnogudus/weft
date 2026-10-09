@@ -1,0 +1,46 @@
+{{- $w := .Values.weft }}
+{{- $dev := has "-dev" $w.extraArgs }}
+{{- if not $dev }}
+{{- if not $w.ldapUrl }}{{ fail "weft.ldapUrl is required" }}{{ end }}
+{{- if not $w.baseDn }}{{ fail "weft.baseDn is required" }}{{ end }}
+{{- end }}
+{{- if and $w.caCert.secretName $w.caCert.configMapName }}{{ fail "set only one of weft.caCert.secretName and weft.caCert.configMapName" }}{{ end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "weft.fullname" . }}
+  labels:
+    {{- include "weft.labels" . | nindent 4 }}
+data:
+  WEFT_LISTEN_ADDR: "0.0.0.0:8080"
+  WEFT_DIRECTORY: {{ $w.directory | quote }}
+  {{- with $w.ldapUrl }}
+  WEFT_LDAP_URL: {{ . | quote }}
+  {{- end }}
+  {{- with $w.baseDn }}
+  WEFT_BASE_DN: {{ . | quote }}
+  {{- end }}
+  {{- with $w.adminDn }}
+  WEFT_ADMIN_DN: {{ . | quote }}
+  {{- end }}
+  {{- with $w.tlsMode }}
+  WEFT_TLS_MODE: {{ . | quote }}
+  {{- end }}
+  {{- if include "weft.hasCaCert" . }}
+  WEFT_CA_CERT_FILE: /etc/weft/ca/{{ $w.caCert.key }}
+  {{- end }}
+  {{- range $k, $v := $w.extraEnv }}
+  {{ $k }}: {{ $v | toString | quote }}
+  {{- end }}
+{{- with $w.configToml }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "weft.fullname" $ }}-toml
+  labels:
+    {{- include "weft.labels" $ | nindent 4 }}
+data:
+  weft.toml: |
+    {{- . | nindent 4 }}
+{{- end }}

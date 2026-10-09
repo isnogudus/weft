@@ -1,0 +1,112 @@
+{{- $w := .Values.weft }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "weft.fullname" . }}
+  labels:
+    {{- include "weft.labels" . | nindent 4 }}
+spec:
+  # Sessions live in memory: a second replica would not know the first one's
+  # logins. Recreate avoids two pods side by side during an upgrade.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "weft.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "weft.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "weft.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: weft
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- $args := $w.extraArgs }}
+          {{- if $w.configToml }}
+          {{- $args = concat (list "-config" "/etc/weft/config/weft.toml") $args }}
+          {{- end }}
+          {{- with $args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "weft.fullname" . }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if or $w.configToml (include "weft.hasCaCert" .) }}
+          volumeMounts:
+            {{- if $w.configToml }}
+            - name: config
+              mountPath: /etc/weft/config
+              readOnly: true
+            {{- end }}
+            {{- if include "weft.hasCaCert" . }}
+            - name: ca
+              mountPath: /etc/weft/ca
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if or $w.configToml (include "weft.hasCaCert" .) }}
+      volumes:
+        {{- if $w.configToml }}
+        - name: config
+          configMap:
+            name: {{ include "weft.fullname" . }}-toml
+        {{- end }}
+        {{- if $w.caCert.secretName }}
+        - name: ca
+          secret:
+            secretName: {{ $w.caCert.secretName }}
+            items:
+              - key: {{ $w.caCert.key }}
+                path: {{ $w.caCert.key }}
+        {{- else if $w.caCert.configMapName }}
+        - name: ca
+          configMap:
+            name: {{ $w.caCert.configMapName }}
+            items:
+              - key: {{ $w.caCert.key }}
+                path: {{ $w.caCert.key }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
