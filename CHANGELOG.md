@@ -21,6 +21,17 @@ All notable changes to this project are documented here. The format is based on
   architecture and cross-compiles, so multi-arch image builds need no
   emulation for those stages.
 
+## [Unreleased]
+
+### Changed
+- **API error messages are English.** The `error` field of non-2xx responses
+  was German (`"nicht gefunden"`, `"ungültige Anfrage"`, ...) and is now
+  English (`"not found"`, `"invalid request"`, ...), matching the validation
+  messages that already were. The German UI translates them back, so it looks
+  as before; the English UI no longer shows German server errors. Anything
+  matching on the old German text needs updating; the status codes are
+  unchanged.
+
 ## [0.4.0] - 2026-10-09
 
 Upgrading from 0.3.0: no configuration change is required, and nothing in the
@@ -186,6 +197,7 @@ First public release.
 - Docs and OpenBSD operational examples: `weft.toml`, `ldapd.conf` (schema +
   ACLs), `rc.d` service, `relayd` TLS termination.
 
+[Unreleased]: https://github.com/isnogudus/weft/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/isnogudus/weft/releases/tag/v0.4.0
 [0.3.0]: https://github.com/isnogudus/weft/releases/tag/v0.3.0
 [0.2.0]: https://github.com/isnogudus/weft/releases/tag/v0.2.0

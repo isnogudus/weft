@@ -43,17 +43,17 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 func writeDirError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, directory.ErrNotFound):
-		writeError(w, http.StatusNotFound, "nicht gefunden")
+		writeError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, directory.ErrAlreadyExists):
-		writeError(w, http.StatusConflict, "existiert bereits")
+		writeError(w, http.StatusConflict, "already exists")
 	case errors.Is(err, directory.ErrPermission):
-		writeError(w, http.StatusForbidden, "keine Berechtigung")
+		writeError(w, http.StatusForbidden, "permission denied")
 	case errors.Is(err, directory.ErrInvalidCredentials):
-		writeError(w, http.StatusUnauthorized, "ungültige Anmeldedaten")
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
 	case errors.Is(err, directory.ErrRangeExhausted):
-		writeError(w, http.StatusConflict, "uid/gid-Bereich erschöpft")
+		writeError(w, http.StatusConflict, "uid/gid range exhausted")
 	default:
-		writeError(w, http.StatusBadGateway, "Verzeichnisfehler")
+		writeError(w, http.StatusBadGateway, "directory error")
 	}
 }
 

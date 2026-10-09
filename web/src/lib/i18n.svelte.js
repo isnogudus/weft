@@ -245,6 +245,46 @@ const en = {
 
 const tables = { de: {}, en }
 
+// The API answers in English. Its fixed error messages (writeError in
+// internal/server) are mapped back to German here so the German UI stays
+// German; messages with dynamic parts (e.g. validation details from the
+// service layer) pass through unchanged.
+const serverDe = {
+  'invalid request': 'ungültige Anfrage',
+  'no rows': 'keine Zeilen',
+  'too many rows per request (max. 100)': 'zu viele Zeilen pro Anfrage (max. 100)',
+  'duplicate uid in the file': 'doppelte uid in der Datei',
+  'not found': 'nicht gefunden',
+  'already exists': 'existiert bereits',
+  'permission denied': 'keine Berechtigung',
+  'invalid credentials': 'ungültige Anmeldedaten',
+  'uid/gid range exhausted': 'uid/gid-Bereich erschöpft',
+  'directory error': 'Verzeichnisfehler',
+  'not logged in': 'nicht angemeldet',
+  'session expired': 'Sitzung abgelaufen',
+  'invalid CSRF token': 'ungültiges CSRF-Token',
+  'administrators only': 'nur für Administratoren',
+  'too many attempts, please try again later': 'zu viele Versuche, bitte später erneut',
+  'username and password required': 'Benutzername und Passwort erforderlich',
+  'admin login is disabled': 'Admin-Anmeldung ist deaktiviert',
+  'could not create session': 'Sitzung konnte nicht erstellt werden',
+  "the admin password is the directory server's rootpw and is changed in its configuration (ldapd.conf rootpw / olcRootPW)":
+    'das Admin-Passwort ist das rootpw des Verzeichnisservers und wird in dessen Konfiguration geändert (ldapd.conf rootpw / olcRootPW)',
+  'password written but not confirmed (directory error) -- log in again to check which password is in effect':
+    'Passwort geschrieben, aber nicht bestätigt (Verzeichnisfehler) – bitte neu anmelden, um zu prüfen, welches Passwort gilt',
+  'the admin password cannot be changed in weft (admin_can_change_own_password = false)':
+    'das Admin-Passwort kann in weft nicht geändert werden (admin_can_change_own_password = false)',
+  'new password required': 'neues Passwort erforderlich',
+  'invalid uid': 'ungültige uid',
+  'uid required': 'uid erforderlich',
+  'current password is incorrect': 'aktuelles Passwort ist falsch',
+}
+
+// serverMsg localizes an error message received from the API.
+export function serverMsg(msg) {
+  return (i18n.lang === 'de' && serverDe[msg]) || msg
+}
+
 export function t(key, params) {
   let s = (tables[i18n.lang] && tables[i18n.lang][key]) || key
   if (params) {
