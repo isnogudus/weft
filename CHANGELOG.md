@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Kubernetes support.** Releases now publish a container image for
+  linux/amd64 and linux/arm64 (`ghcr.io/isnogudus/weft`) and a Helm chart
+  (`oci://ghcr.io/isnogudus/charts/weft`). The chart runs a single hardened
+  replica (non-root, read-only root filesystem, no capabilities), uses
+  `/api/healthz` for readiness and a TCP check for liveness, and takes the
+  configuration as values, extra `WEFT_*` variables, an optional `weft.toml`
+  and an optional CA certificate. CI lints the chart and installs it in a kind
+  cluster on every pull request.
+
+### Changed
+- The Dockerfile builds the frontend and the Go binary on the build host's
+  architecture and cross-compiles, so multi-arch image builds need no
+  emulation for those stages.
+
 ## [0.4.0] - 2026-10-09
 
 Upgrading from 0.3.0: no configuration change is required, and nothing in the
