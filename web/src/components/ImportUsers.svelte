@@ -181,7 +181,7 @@
       suffixCount = resolved.suffixed
       finalizePhase = 'passwords'
       rows = await Promise.all(fields.map(async (f, i) => {
-        const password = f.password || await generatePassword(meta?.maxPasswordLength ?? 72)
+        const password = f.password || generatePassword()
         finalizeDone++
         return {
           index: i,
@@ -399,7 +399,7 @@
           <label><span>{t('Passwort')}</span>
             <span class="row" style="gap:0.4rem">
               <input type="text" bind:value={genPassword} style="flex:1" />
-              <button type="button" onclick={async () => (genPassword = await generatePassword(meta?.maxPasswordLength ?? 72))} title={t('Passphrase vorschlagen')}>{t('Vorschlagen')}</button>
+              <button type="button" onclick={() => (genPassword = generatePassword())} title={t('Passwort vorschlagen')}>{t('Vorschlagen')}</button>
             </span>
           </label>
         {/if}
@@ -493,7 +493,7 @@
                       <span style="white-space:nowrap; display:inline-flex; gap:0.25rem">
                         <input style="min-width:24ch" class:invalid={fieldError(r, 'password')} title={fieldError(r, 'password')} bind:value={r.password} oninput={revalidate} />
                         <button type="button" title={t('Neues Passwort vorschlagen')}
-                          onclick={async () => { r.password = await generatePassword(meta?.maxPasswordLength ?? 72); revalidate() }}>↻</button>
+                          onclick={() => { r.password = generatePassword(); revalidate() }}>↻</button>
                       </span>
                     {:else if tgt === 'uid'}
                       <input style="min-width:14ch" class:suffixed={r.f.uidSuffixed} class:invalid={fieldError(r, 'uid')}

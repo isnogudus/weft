@@ -144,7 +144,7 @@ const en = {
 
   // Passwords / generator
   'Vorschlagen': 'Suggest',
-  'Passphrase vorschlagen': 'Suggest a passphrase',
+  'Passwort vorschlagen': 'Suggest a password',
   'Neues Passwort vorschlagen': 'Suggest a new password',
 
   // Bulk import

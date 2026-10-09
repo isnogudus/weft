@@ -13,8 +13,8 @@
   let show = $state(false)
   const max = $derived(app.meta?.maxPasswordLength ?? 72)
 
-  async function suggest() {
-    newPassword = confirm = await generatePassword(max)
+  function suggest() {
+    newPassword = confirm = generatePassword()
     show = true
   }
 
@@ -42,7 +42,7 @@
     <label><span>{t('Neues Passwort')}</span>
       <span class="row" style="gap:0.4rem">
         <input type={show ? 'text' : 'password'} bind:value={newPassword} autofocus style="flex:1" />
-        <button type="button" onclick={suggest} title={t('Passphrase vorschlagen')}>{t('Vorschlagen')}</button>
+        <button type="button" onclick={suggest} title={t('Passwort vorschlagen')}>{t('Vorschlagen')}</button>
       </span>
     </label>
     <label><span>{t('Bestätigen')}</span><input type={show ? 'text' : 'password'} bind:value={confirm} /></label>

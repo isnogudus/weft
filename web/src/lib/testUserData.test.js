@@ -47,7 +47,7 @@ describe('generateTestUsers', () => {
     expect(new Set(rows.map((r) => r.uid)).size).toBe(50)
   })
 
-  it('leaves password blank by default, so each row gets its own passphrase later', () => {
+  it('leaves password blank by default, so each row gets its own password later', () => {
     const rows = generateTestUsers({ givenName: 'Anna', sn: 'Müller', count: 3 })
     expect(rows.every((r) => r.password === '')).toBe(true)
   })

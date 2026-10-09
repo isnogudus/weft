@@ -61,7 +61,7 @@ const digits = (n) => String(Math.floor(Math.random() * 10 ** n)).padStart(n, '0
 // everything else is left for the admin to edit in the review table.
 // mailDomain is optional -- blank skips mail entirely. password is optional --
 // blank leaves each row's password empty, so finalizeRows() in
-// ImportUsers.svelte generates a unique passphrase per row as usual; a
+// ImportUsers.svelte generates a unique password per row as usual; a
 // non-blank value is used for every row instead (a uniform password for the
 // whole batch).
 export function generateTestUsers({ givenName, sn, start = 0, count = 20, mailDomain = '', password = '', userAttrs = [] }) {
