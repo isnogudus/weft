@@ -149,7 +149,7 @@ func TestNonAdminIsSelfServiceOnly(t *testing.T) {
 
 // The admin's own password is written to admin_dn, not to UserDN(admin_uid):
 // with admin_dn pointing at a real entry outside ou=people, the latter does not
-// exist and the change used to fail with "nicht gefunden".
+// exist and the change used to fail with "not found".
 func TestAdminChangesOwnPassword(t *testing.T) {
 	ts := testServer(t)
 	admin := adminClient(t, ts)

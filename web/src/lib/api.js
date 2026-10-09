@@ -6,6 +6,8 @@
 // on every successful request, so an idle browser switches to the login view at
 // roughly the same moment — and a 401 (session already gone) does so immediately.
 
+import { serverMsg } from './i18n.svelte.js'
+
 let csrf = ''
 let sessionMs = 0
 let expireTimer = null
@@ -64,7 +66,7 @@ async function request(method, path, body) {
   }
 
   if (!res.ok) {
-    const err = new Error((data && data.error) || res.statusText)
+    const err = new Error((data && serverMsg(data.error)) || res.statusText)
     err.status = res.status
     throw err
   }
