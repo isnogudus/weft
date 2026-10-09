@@ -241,3 +241,41 @@ func TestDNHelpers(t *testing.T) {
 		t.Fatalf("AdminBindDN (explicit) = %q", got)
 	}
 }
+
+func TestTrustedProxies(t *testing.T) {
+	c := validBase()
+	if p, err := c.TrustedProxyPrefixes(); err != nil || len(p) != 0 {
+		t.Fatalf("default trusted_proxies = %v, %v; want empty", p, err)
+	}
+
+	c.TrustedProxies = []string{"10.0.0.0/8", " 192.0.2.10 ", "2001:db8::1", "10.1.2.3/16"}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("valid trusted_proxies rejected: %v", err)
+	}
+	p, _ := c.TrustedProxyPrefixes()
+	want := []string{"10.0.0.0/8", "192.0.2.10/32", "2001:db8::1/128", "10.1.0.0/16"}
+	for i, w := range want {
+		if p[i].String() != w {
+			t.Errorf("prefix %d = %s, want %s", i, p[i], w)
+		}
+	}
+
+	for _, bad := range []string{"", "not-an-ip", "10.0.0.0/33", "10.0.0.1:80"} {
+		c := validBase()
+		c.TrustedProxies = []string{bad}
+		if err := c.Validate(); err == nil {
+			t.Errorf("trusted_proxies %q should fail", bad)
+		}
+	}
+}
+
+func TestTrustedProxiesEnv(t *testing.T) {
+	t.Setenv("WEFT_TRUSTED_PROXIES", "10.0.0.0/8, ,192.0.2.10")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.TrustedProxies) != 2 || c.TrustedProxies[0] != "10.0.0.0/8" || c.TrustedProxies[1] != "192.0.2.10" {
+		t.Fatalf("WEFT_TRUSTED_PROXIES parsed as %q", c.TrustedProxies)
+	}
+}

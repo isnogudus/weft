@@ -287,6 +287,31 @@ func TestLoginRateLimit(t *testing.T) {
 	}
 }
 
+// TestLoginRateLimitIgnoresSpoofedHeaders: without trusted_proxies, a fresh
+// forwarding header per request must not buy a fresh rate-limit bucket.
+func TestLoginRateLimitIgnoresSpoofedHeaders(t *testing.T) {
+	ts := testServer(t)
+	var last int
+	for i := 0; i < 7; i++ {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/login",
+			bytes.NewBufferString(`{"username":"admin","password":"wrong"}`))
+		req.Header.Set("Content-Type", "application/json")
+		spoof := fmt.Sprintf("203.0.113.%d", i+1)
+		req.Header.Set("X-Forwarded-For", spoof)
+		req.Header.Set("X-Real-IP", spoof)
+		req.Header.Set("True-Client-IP", spoof)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		last = resp.StatusCode
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 despite spoofed headers, got %d", last)
+	}
+}
+
 func TestAdminLoginDisabled(t *testing.T) {
 	cfg := config.Default()
 	cfg.BaseDN = "dc=example,dc=org"

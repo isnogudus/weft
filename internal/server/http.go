@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
+	"net/netip"
+	"strings"
 
 	"weft/internal/directory"
 )
@@ -75,40 +76,58 @@ func readJSONMax(w http.ResponseWriter, r *http.Request, dst any, limit int64) e
 	return nil
 }
 
-// clientIP extracts a best-effort client IP for rate limiting. When weft runs
-// behind relayd/httpd, configure the proxy to set X-Forwarded-For; otherwise
-// the proxy address is used (a coarse but safe default).
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := indexComma(xff); i >= 0 {
-			return trimSpace(xff[:i])
+// clientIP returns the client IP the login rate limiter keys on.
+//
+// X-Forwarded-For is only believed when the TCP peer (RemoteAddr) is one of the
+// trusted proxies: its leftmost entries are whatever the client sent, and every
+// proxy appends to the right. The header is then walked from right to left,
+// skipping further trusted proxies, and the first untrusted address wins (the
+// rightmost-untrusted algorithm). A malformed entry ends the walk, as does
+// running out of entries; both fall back to the peer address.
+func clientIP(r *http.Request, trusted []netip.Prefix) string {
+	peer, ok := parseHostAddr(r.RemoteAddr)
+	if !ok {
+		return r.RemoteAddr // e.g. a Unix socket listener
+	}
+	if !isTrusted(peer, trusted) {
+		return peer.String()
+	}
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop := strings.TrimSpace(hops[i])
+		if hop == "" {
+			continue
 		}
-		return trimSpace(xff)
+		a, ok := parseHostAddr(hop)
+		if !ok {
+			break
+		}
+		if !isTrusted(a, trusted) {
+			return a.String()
+		}
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return peer.String()
 }
 
-func indexComma(s string) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == ',' {
-			return i
-		}
+// parseHostAddr parses an IP with or without a port ("192.0.2.1",
+// "192.0.2.1:1234", "[2001:db8::1]:1234"); IPv4-mapped IPv6 is unmapped.
+func parseHostAddr(s string) (netip.Addr, bool) {
+	if a, err := netip.ParseAddr(s); err == nil {
+		return a.Unmap(), true
 	}
-	return -1
+	if ap, err := netip.ParseAddrPort(s); err == nil {
+		return ap.Addr().Unmap(), true
+	}
+	return netip.Addr{}, false
 }
 
-func trimSpace(s string) string {
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
-		s = s[1:]
+func isTrusted(a netip.Addr, trusted []netip.Prefix) bool {
+	for _, p := range trusted {
+		if p.Contains(a) {
+			return true
+		}
 	}
-	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t') {
-		s = s[:len(s)-1]
-	}
-	return s
+	return false
 }
 
 // sessionFromCtx returns the session attached by the auth middleware.

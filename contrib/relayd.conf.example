@@ -24,7 +24,9 @@ table <weft> { 127.0.0.1 }
 http protocol "wefttls" {
 	tls keypair "weft.example.org"
 
-	# Forward the real client IP so weft's login rate limit keys on it.
+	# Forward the real client IP so weft's login rate limit keys on it. weft
+	# only believes this header from a trusted proxy: set
+	# trusted_proxies = ["127.0.0.1"] in weft.toml.
 	match request header set "X-Forwarded-For" value "$REMOTE_ADDR"
 
 	# Security headers (weft also sets some itself).

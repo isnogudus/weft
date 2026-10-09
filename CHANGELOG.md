@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Upgrading: deployments behind relayd, httpd, nginx, a Kubernetes Ingress or
+any other reverse proxy must now set `trusted_proxies` (e.g.
+`trusted_proxies = ["127.0.0.1"]` for relayd on the same host) to keep
+per-client login rate limiting. Without it weft no longer believes
+`X-Forwarded-For` and keys the limit on the proxy's address, so all clients
+share one bucket of five attempts per minute.
+
+### Security
+- **The login rate limit can no longer be bypassed with a forged
+  `X-Forwarded-For`.** weft took the client IP from the header's first entry,
+  which is whatever the client sent, so a fresh value per request bought a fresh
+  bucket -- with or without a proxy. chi's `RealIP` middleware did the same with
+  `X-Real-IP` and `True-Client-IP` and has been removed. The header is now only
+  read when the connection comes from a trusted proxy, and then from the right:
+  the client IP is the rightmost address that is not itself a trusted proxy.
+
+### Added
+- `trusted_proxies` option (default empty, `WEFT_TRUSTED_PROXIES`
+  comma-separated): CIDRs or bare IPs of the reverse proxies whose
+  `X-Forwarded-For` weft believes.
+
 ## [0.4.0] - 2026-10-09
 
 Upgrading from 0.3.0: no configuration change is required, and nothing in the
@@ -169,6 +192,7 @@ First public release.
 - Docs and OpenBSD operational examples: `weft.toml`, `ldapd.conf` (schema +
   ACLs), `rc.d` service, `relayd` TLS termination.
 
+[Unreleased]: https://github.com/isnogudus/weft/compare/v0.4.0...HEAD
 [0.4.0]: https://github.com/isnogudus/weft/releases/tag/v0.4.0
 [0.3.0]: https://github.com/isnogudus/weft/releases/tag/v0.3.0
 [0.2.0]: https://github.com/isnogudus/weft/releases/tag/v0.2.0

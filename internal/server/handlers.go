@@ -30,7 +30,7 @@ func (s *Server) withConn(w http.ResponseWriter, r *http.Request, fn func(c dire
 // --- auth / session ---
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	ip := clientIP(r, s.proxies)
 	if !s.login.allow(ip) {
 		writeError(w, http.StatusTooManyRequests, "zu viele Versuche, bitte später erneut")
 		return

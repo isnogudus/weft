@@ -286,6 +286,7 @@ examples do for the `[[user_attr]]` tables).
 | `tls_cert_file` / `tls_key_file` | — | `WEFT_TLS_CERT_FILE` / `WEFT_TLS_KEY_FILE` | serve HTTPS directly instead of behind a proxy |
 | `session_timeout` | `30m` | `WEFT_SESSION_TIMEOUT` | idle expiry, sliding; drives the SPA's auto-logout |
 | `cookie_secure` | `true` | `WEFT_COOKIE_SECURE` | `false` only for local plain-HTTP dev |
+| `trusted_proxies` | *(empty)* | `WEFT_TRUSTED_PROXIES` (comma-separated) | CIDRs or IPs of reverse proxies whose `X-Forwarded-For` is believed for the login rate limit; empty = ignore the header |
 
 `-dev` runs against an in-memory fake directory with no LDAP server at all
 (admin password from `-dev-rootpw`, default `rootpw`); it is for development,
@@ -380,7 +381,10 @@ you may not have):
   logged.
 - CSRF: a synchronizer token (returned by `/login` and `/me`, echoed in the
   `X-CSRF-Token` header) is required on all state-changing requests.
-- Login is rate-limited per client IP. Sessions expire after `session_timeout`
+- Login is rate-limited per client IP. `X-Forwarded-For` is only honoured when
+  the connection comes from one of the `trusted_proxies`, and then read from
+  the right (the rightmost address that is not itself a trusted proxy), so a
+  client cannot pick its own rate-limit bucket. Sessions expire after `session_timeout`
   of inactivity (server-side, sliding); the SPA switches to the login view when a
   session expires.
 - `allow_admin = false` runs a self-service-only instance: the admin uid cannot
@@ -480,8 +484,10 @@ OpenBSD-specific.
    [Sandboxing](#sandboxing); set `sandbox=false` to opt out).
 4. Terminate TLS in front of weft with `relayd` (or `httpd`) — see
    [`contrib/relayd.conf.example`](contrib/relayd.conf.example). weft listens on
-   `127.0.0.1:8080`; the proxy should forward the real client IP via
-   `X-Forwarded-For` so the login rate limit keys correctly. (For a standalone
+   `127.0.0.1:8080`; the proxy forwards the real client IP via
+   `X-Forwarded-For`, and `trusted_proxies = ["127.0.0.1"]` in `weft.toml`
+   tells weft to believe it, so the login rate limit keys on each client
+   instead of on the proxy. (For a standalone
    setup without a proxy, set `tls_cert_file`/`tls_key_file` in `weft.toml`.)
    The example also carries a commented-out `check http "/api/healthz" code 200`
    — useful with more than one weft host, but see the note there before enabling

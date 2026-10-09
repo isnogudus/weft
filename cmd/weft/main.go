@@ -106,6 +106,10 @@ func runSingle(cfg config.Config, dev bool, devRootpw string, assets fs.FS) erro
 	var dir directory.Directory
 	if dev {
 		cfg = devDefaults(cfg)
+		// Validate is skipped in dev mode, but server.New relies on this one.
+		if _, err := cfg.TrustedProxyPrefixes(); err != nil {
+			return err
+		}
 		dir = fake.New(devRootpw, cfg.UIDRange(), cfg.GIDRange())
 		applog.Infof("DEV MODE: in-memory fake directory, admin uid=%q password=%q", cfg.AdminUID, devRootpw)
 	} else {
