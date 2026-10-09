@@ -8,10 +8,12 @@ All notable changes to this project are documented here. The format is based on
 
 Upgrading: deployments behind relayd, httpd, nginx, a Kubernetes Ingress or
 any other reverse proxy must now set `trusted_proxies` (e.g.
-`trusted_proxies = ["127.0.0.1"]` for relayd on the same host) to keep
-per-client login rate limiting. Without it weft no longer believes
-`X-Forwarded-For` and keys the limit on the proxy's address, so all clients
-share one bucket of five attempts per minute.
+`trusted_proxies = ["127.0.0.1"]` for relayd on the same host, or
+`weft.trustedProxies` in the Helm chart) to keep per-client login rate
+limiting. Without it weft no longer believes `X-Forwarded-For` and keys the
+limit on the proxy's address, so all clients share one bucket of five attempts
+per minute. Anything matching on the text of API error messages must expect
+English now (see Changed).
 
 ### Security
 - **The login rate limit can no longer be bypassed with a forged
@@ -25,7 +27,28 @@ share one bucket of five attempts per minute.
 ### Added
 - `trusted_proxies` option (default empty, `WEFT_TRUSTED_PROXIES`
   comma-separated): CIDRs or bare IPs of the reverse proxies whose
-  `X-Forwarded-For` weft believes.
+  `X-Forwarded-For` weft believes. The Helm chart exposes it as
+  `weft.trustedProxies`.
+- **Kubernetes support.** Releases now publish a container image for
+  linux/amd64 and linux/arm64 (`ghcr.io/isnogudus/weft`) and a Helm chart
+  (`oci://ghcr.io/isnogudus/charts/weft`). The chart runs a single hardened
+  replica (non-root, read-only root filesystem, no capabilities), uses
+  `/api/healthz` for readiness and a TCP check for liveness, and takes the
+  configuration as values, extra `WEFT_*` variables, an optional `weft.toml`
+  and an optional CA certificate. CI lints the chart and installs it in a kind
+  cluster on every pull request.
+
+### Changed
+- **API error messages are English.** The `error` field of non-2xx responses
+  was German (`"nicht gefunden"`, `"ungültige Anfrage"`, ...) and is now
+  English (`"not found"`, `"invalid request"`, ...), matching the validation
+  messages that already were. The German UI translates them back, so it looks
+  as before; the English UI no longer shows German server errors. Anything
+  matching on the old German text needs updating; the status codes are
+  unchanged.
+- The Dockerfile builds the frontend and the Go binary on the build host's
+  architecture and cross-compiles, so multi-arch image builds need no
+  emulation for those stages.
 
 ## [0.4.0] - 2026-10-09
 

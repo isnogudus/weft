@@ -1,0 +1,8 @@
+# Values for the CI smoke test (.github/workflows/ci.yml): the image built from
+# the checkout, loaded into kind, running against the in-memory fake directory.
+image:
+  repository: weft
+  tag: ci
+  pullPolicy: Never
+weft:
+  extraArgs: ["-dev"]

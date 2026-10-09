@@ -1,0 +1,32 @@
+weft is running against {{ .Values.weft.ldapUrl | default "the in-memory dev directory" }}.
+
+{{- if .Values.ingress.enabled }}
+
+Open:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/
+{{- end }}
+{{- if not .Values.weft.trustedProxies }}
+
+weft.trustedProxies is empty, so weft ignores X-Forwarded-For and every client
+behind the Ingress shares one login rate-limit bucket. Set it to the Ingress
+controller's pod CIDR to rate-limit per client.
+{{- end }}
+{{- else }}
+
+No Ingress is configured. To try it locally:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "weft.fullname" . }} 8080:{{ .Values.service.port }}
+
+and open http://localhost:8080/ (browsers accept weft's Secure session cookie
+on localhost).
+{{- end }}
+
+Log in with the admin uid ("admin" unless WEFT_ADMIN_UID is set) and the
+directory's admin password. weft keeps sessions in memory, so it runs as a
+single replica and a pod restart logs everyone out.
+
+Readiness follows /api/healthz: the pod is not ready while LDAP is
+unreachable. Check with:
+
+  kubectl --namespace {{ .Release.Namespace }} logs deploy/{{ include "weft.fullname" . }}

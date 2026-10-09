@@ -32,22 +32,22 @@ func (s *Server) withConn(w http.ResponseWriter, r *http.Request, fn func(c dire
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r, s.proxies)
 	if !s.login.allow(ip) {
-		writeError(w, http.StatusTooManyRequests, "zu viele Versuche, bitte später erneut")
+		writeError(w, http.StatusTooManyRequests, "too many attempts, please try again later")
 		return
 	}
 	var req loginReq
 	if err := readJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "ungültige Anfrage")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if req.Username == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "Benutzername und Passwort erforderlich")
+		writeError(w, http.StatusBadRequest, "username and password required")
 		return
 	}
 
 	isAdmin := s.cfg.IsAdminUID(req.Username)
 	if isAdmin && !s.cfg.AllowAdmin {
-		writeError(w, http.StatusForbidden, "Admin-Anmeldung ist deaktiviert")
+		writeError(w, http.StatusForbidden, "admin login is disabled")
 		return
 	}
 	var (
@@ -61,7 +61,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if errors.Is(err, directory.ErrInvalidCredentials) {
-			writeError(w, http.StatusUnauthorized, "ungültige Anmeldedaten")
+			writeError(w, http.StatusUnauthorized, "invalid credentials")
 			return
 		}
 		writeDirError(w, err)
@@ -86,7 +86,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	s.login.reset(ip)
 	sess, err := s.sessions.create(req.Username, req.Password, isAdmin)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Sitzung konnte nicht erstellt werden")
+		writeError(w, http.StatusInternalServerError, "could not create session")
 		return
 	}
 	sess.needsSetup = needsSetup
@@ -175,25 +175,25 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 
 // rootPWMsg answers an admin password change that weft cannot carry out: the
 // admin DN is the server's rootdn, whose password is configuration, not data.
-const rootPWMsg = "das Admin-Passwort ist das rootpw des Verzeichnisservers und wird in dessen Konfiguration geändert (ldapd.conf rootpw / olcRootPW)"
+const rootPWMsg = "the admin password is the directory server's rootpw and is changed in its configuration (ldapd.conf rootpw / olcRootPW)"
 
 // unverifiedPWMsg answers an admin password change that was written but could
 // not be verified because the directory failed during the check.
-const unverifiedPWMsg = "Passwort geschrieben, aber nicht bestätigt (Verzeichnisfehler) – bitte neu anmelden, um zu prüfen, welches Passwort gilt"
+const unverifiedPWMsg = "password written but not confirmed (directory error) -- log in again to check which password is in effect"
 
 func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
 	if sess.isAdmin && !s.cfg.AdminCanChangeOwnPassword {
-		writeError(w, http.StatusForbidden, "das Admin-Passwort kann in weft nicht geändert werden (admin_can_change_own_password = false)")
+		writeError(w, http.StatusForbidden, "the admin password cannot be changed in weft (admin_can_change_own_password = false)")
 		return
 	}
 	var req passwordReq
 	if err := readJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "ungültige Anfrage")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if req.NewPassword == "" {
-		writeError(w, http.StatusBadRequest, "neues Passwort erforderlich")
+		writeError(w, http.StatusBadRequest, "new password required")
 		return
 	}
 	// Verify the current password by re-binding, to defend against a hijacked
@@ -208,7 +208,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		check, err = s.dir.BindUser(r.Context(), sess.uid, req.OldPassword)
 	}
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "aktuelles Passwort ist falsch")
+		writeError(w, http.StatusUnauthorized, "current password is incorrect")
 		return
 	}
 	check.Close()
@@ -408,7 +408,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req createUserReq
 	if err := readJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "ungültige Anfrage")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	s.withConn(w, r, func(c directory.Conn) {
@@ -430,7 +430,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	var req updateUserReq
 	if err := readJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "ungültige Anfrage")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	s.withConn(w, r, func(c directory.Conn) {
@@ -463,7 +463,7 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	var req passwordReq
 	if err := readJSON(w, r, &req); err != nil || req.NewPassword == "" {
-		writeError(w, http.StatusBadRequest, "neues Passwort erforderlich")
+		writeError(w, http.StatusBadRequest, "new password required")
 		return
 	}
 	s.withConn(w, r, func(c directory.Conn) {
@@ -481,11 +481,11 @@ func (s *Server) handleRenameUser(w http.ResponseWriter, r *http.Request) {
 		NewUID string `json:"newUid"`
 	}
 	if err := readJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "ungültige Anfrage")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if !service.ValidName(req.NewUID) {
-		writeError(w, http.StatusBadRequest, "ungültige uid")
+		writeError(w, http.StatusBadRequest, "invalid uid")
 		return
 	}
 	s.withConn(w, r, func(c directory.Conn) {
@@ -537,7 +537,7 @@ func (s *Server) handleGetGroup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	var req createGroupReq
 	if err := readJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "ungültige Anfrage")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	s.withConn(w, r, func(c directory.Conn) {
@@ -565,7 +565,7 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	cn := chi.URLParam(r, "cn")
 	var req memberReq
 	if err := readJSON(w, r, &req); err != nil || req.UID == "" {
-		writeError(w, http.StatusBadRequest, "uid erforderlich")
+		writeError(w, http.StatusBadRequest, "uid required")
 		return
 	}
 	s.withConn(w, r, func(c directory.Conn) {

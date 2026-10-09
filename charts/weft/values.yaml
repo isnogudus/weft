@@ -1,0 +1,125 @@
+# Default values for the weft chart. Only the "weft" block is usually needed:
+#
+#   helm install weft oci://ghcr.io/isnogudus/charts/weft \
+#     --set weft.ldapUrl=ldaps://ldap.example.org \
+#     --set weft.baseDn=dc=example,dc=org \
+#     --set weft.adminDn=cn=admin,dc=example,dc=org
+#
+# weft keeps its sessions in memory (each holds the credentials it re-binds
+# with), so the chart always runs exactly one replica. A pod restart logs
+# everyone out; nothing else is lost, as weft stores nothing outside LDAP.
+
+image:
+  repository: ghcr.io/isnogudus/weft
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+weft:
+  # Directory server flavour: "openldap" or "ldapd".
+  directory: openldap
+  # Required: LDAP server URL, e.g. ldaps://ldap.example.org or
+  # ldap://openldap.ldap.svc:389 (with tlsMode starttls or plain).
+  ldapUrl: ""
+  # Required: base DN of the directory, e.g. dc=example,dc=org.
+  baseDn: ""
+  # Bind DN of the admin; must equal the server's rootdn (or a real admin
+  # entry). Leave empty to derive uid=<admin_uid>,ou=people,<base>.
+  adminDn: ""
+  # Transport security to LDAP: ldaps, starttls or plain. plain additionally
+  # needs WEFT_ALLOW_PLAIN_BIND=true in extraEnv.
+  tlsMode: ldaps
+  # CA that signed the LDAP server certificate, from an existing Secret or
+  # ConfigMap. Leave both names empty to use the image's system trust store.
+  caCert:
+    secretName: ""
+    configMapName: ""
+    key: ca.crt
+  # Reverse proxies (CIDRs or IPs) whose X-Forwarded-For weft believes for the
+  # per-client login rate limit -- with an Ingress, the controller pods'
+  # addresses, typically the cluster's pod CIDR, e.g. ["10.244.0.0/16"].
+  # Empty means the header is ignored and all clients behind the Ingress share
+  # one rate-limit bucket.
+  trustedProxies: []
+  # Further WEFT_* settings as plain environment variables; see the README's
+  # options table, e.g.:
+  #   WEFT_ALLOW_ADMIN: "false"
+  #   WEFT_ADMIN_CAN_CHANGE_OWN_PASSWORD: "false"
+  #   WEFT_SESSION_TIMEOUT: 15m
+  extraEnv: {}
+  # Optional weft.toml for options without an environment variable, such as
+  # the [[user_attr]] tables. Environment variables take precedence.
+  configToml: ""
+  # Extra command-line arguments for weft.
+  extraArgs: []
+
+serviceAccount:
+  # weft does not talk to the Kubernetes API; the pod needs no token.
+  create: false
+  name: ""
+automountServiceAccountToken: false
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # - host: weft.example.org
+  #   paths:
+  #     - path: /
+  #       pathType: Prefix
+  hosts: []
+  # - secretName: weft-tls
+  #   hosts:
+  #     - weft.example.org
+  tls: []
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+# Not started as root, weft skips chroot and privilege drop but keeps its
+# monitor/worker split; it writes nothing to disk.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# /api/healthz answers 503 while LDAP is unreachable: right for readiness,
+# wrong for liveness (restarting weft does not bring LDAP back), so liveness
+# only checks that the port answers.
+readinessProbe:
+  httpGet:
+    path: /api/healthz
+    port: http
+  periodSeconds: 10
+  failureThreshold: 3
+livenessProbe:
+  tcpSocket:
+    port: http
+  periodSeconds: 20
+  failureThreshold: 3
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

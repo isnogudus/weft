@@ -51,3 +51,68 @@ jobs:
         with:
           name: weft-openbsd-amd64
           path: weft.openbsd-amd64
+
+  helm:
+    name: Helm chart (lint + kind smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+      - name: Lint
+        run: |
+          helm lint charts/weft \
+            --set weft.ldapUrl=ldaps://ldap.example.org,weft.baseDn=dc=example,dc=org
+          helm lint charts/weft -f charts/weft/ci/dev-values.yaml
+      - name: Required values are enforced
+        run: |
+          if helm template t charts/weft >/dev/null 2>&1; then
+            echo "rendering without weft.ldapUrl must fail" >&2; exit 1
+          fi
+      - uses: helm/kind-action@v1
+      - name: Validate rendered variants against the API server
+        run: |
+          cat > /tmp/full.yaml <<'EOF'
+          weft:
+            ldapUrl: ldaps://ldap.example.org
+            baseDn: dc=example,dc=org
+            adminDn: cn=admin,dc=example,dc=org
+            caCert:
+              secretName: ldap-ca
+            extraEnv:
+              WEFT_ADMIN_CAN_CHANGE_OWN_PASSWORD: false
+            configToml: |
+              [[user_attr]]
+              attr = "telephoneNumber"
+          ingress:
+            enabled: true
+            className: nginx
+            hosts:
+              - host: weft.example.org
+                paths:
+                  - path: /
+                    pathType: Prefix
+            tls:
+              - secretName: weft-tls
+                hosts: [weft.example.org]
+          EOF
+          helm template t charts/weft -f /tmp/full.yaml | kubectl apply --dry-run=server -f -
+      - name: Build and load the image
+        run: |
+          docker build -t weft:ci .
+          kind load docker-image weft:ci --name chart-testing
+      - name: Install in dev mode
+        run: |
+          helm install weft charts/weft -f charts/weft/ci/dev-values.yaml --wait --timeout 3m
+      - name: Smoke test
+        run: |
+          kubectl get pods -o wide
+          test "$(kubectl exec deploy/weft -- id -u)" = 65532
+          kubectl port-forward svc/weft 8080:80 >/tmp/pf.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/api/healthz && break; sleep 1; done
+          echo
+          curl -fsS -o /dev/null http://127.0.0.1:8080/
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl describe pods
+          kubectl logs deploy/weft --all-containers || true

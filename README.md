@@ -372,6 +372,43 @@ you may not have):
   http://localhost:8080, log in as `admin` / `rootpw`. Data lives only in the
   container and is gone on restart.
 
+### Kubernetes
+
+Each release publishes a container image for linux/amd64 and linux/arm64 and
+a Helm chart to GHCR:
+
+```sh
+helm install weft oci://ghcr.io/isnogudus/charts/weft \
+  --set weft.ldapUrl=ldaps://ldap.example.org \
+  --set weft.baseDn=dc=example,dc=org \
+  --set weft.adminDn=cn=admin,dc=example,dc=org
+```
+
+The image alone is `ghcr.io/isnogudus/weft:<version>` (also `:<major>.<minor>`
+and `:latest`). The chart ([`charts/weft`](charts/weft)) runs weft the way a
+cluster expects:
+
+- **One replica.** Sessions live in memory, each holding the credentials weft
+  re-binds with, so a second pod would not know the first one's logins. A pod
+  restart logs everyone out; nothing else is lost, since weft stores nothing
+  outside LDAP.
+- **Hardened pod.** Non-root (UID 65532), read-only root filesystem, no
+  capabilities, no service account token. Not started as root, weft skips
+  chroot and privilege drop but keeps its monitor/worker split.
+- **Probes.** Readiness follows `/api/healthz`, so the pod drops out of the
+  Service while LDAP is unreachable; liveness only checks the port, because
+  restarting weft would not bring LDAP back.
+- **Configuration.** The `weft` block in [`values.yaml`](charts/weft/values.yaml)
+  covers the core settings; `weft.extraEnv` takes any further `WEFT_*`
+  variable, `weft.configToml` a `weft.toml` for what has no variable (the
+  `[[user_attr]]` tables), and `weft.caCert` mounts the LDAP server's CA from
+  a Secret or ConfigMap. Config changes roll the pod.
+- **Ingress.** Optional (`ingress.enabled`); terminate TLS there, since
+  `cookie_secure` stays on. Set `weft.trustedProxies` to the Ingress
+  controller's pod CIDR (e.g. `["10.244.0.0/16"]`), or the login rate limit
+  sees only the controller and all clients share one bucket. Without one, `kubectl port-forward` to the Service
+  and open http://localhost:8080/.
+
 ## Security
 
 - TLS to the LDAP server is enforced whenever credentials are sent (`plain`
@@ -616,6 +653,7 @@ internal/password   bcrypt -> {CRYPT}
 internal/service    validation, hashing, id allocation, bootstrap
 internal/server     sessions, CSRF, rate limit, JSON handlers, SPA serving
 web                 Svelte 5 SPA (Vite) + embed.go
+charts/weft         Helm chart (Kubernetes)
 contrib             ldapd.conf / relayd.conf / rc.d examples
 ```
 

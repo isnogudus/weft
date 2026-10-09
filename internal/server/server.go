@@ -75,10 +75,10 @@ func (s *Server) routes() http.Handler {
 		// Distinct JSON 404/405 so weft's "unknown endpoint" is unmistakable
 		// (a static file server or proxy would return HTML instead).
 		api.NotFound(func(w http.ResponseWriter, r *http.Request) {
-			writeError(w, http.StatusNotFound, "unbekannter API-Endpunkt: "+r.URL.Path)
+			writeError(w, http.StatusNotFound, "unknown API endpoint: "+r.URL.Path)
 		})
 		api.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
-			writeError(w, http.StatusMethodNotAllowed, "Methode nicht erlaubt: "+r.Method+" "+r.URL.Path)
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed: "+r.Method+" "+r.URL.Path)
 		})
 
 		// Public endpoints. Reachability only -- nothing here reads the
@@ -148,13 +148,13 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ck, err := r.Cookie(sessionCookie)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "nicht angemeldet")
+			writeError(w, http.StatusUnauthorized, "not logged in")
 			return
 		}
 		sess, ok := s.sessions.get(ck.Value)
 		if !ok {
 			s.clearSessionCookie(w)
-			writeError(w, http.StatusUnauthorized, "Sitzung abgelaufen")
+			writeError(w, http.StatusUnauthorized, "session expired")
 			return
 		}
 		ctx := contextWithSession(r.Context(), sess)
@@ -172,7 +172,7 @@ func (s *Server) requireCSRF(next http.Handler) http.Handler {
 		}
 		sess := sessionFromCtx(r.Context())
 		if sess == nil || r.Header.Get(csrfHeader) != sess.csrf {
-			writeError(w, http.StatusForbidden, "ungültiges CSRF-Token")
+			writeError(w, http.StatusForbidden, "invalid CSRF token")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -184,7 +184,7 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess := sessionFromCtx(r.Context())
 		if sess == nil || !sess.isAdmin {
-			writeError(w, http.StatusForbidden, "nur für Administratoren")
+			writeError(w, http.StatusForbidden, "administrators only")
 			return
 		}
 		next.ServeHTTP(w, r)

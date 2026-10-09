@@ -1,7 +1,7 @@
 <script>
   import { api } from '../lib/api.js'
   import { app } from '../lib/store.svelte.js'
-  import { t, i18n } from '../lib/i18n.svelte.js'
+  import { t, i18n, serverMsg } from '../lib/i18n.svelte.js'
   import { parseCSV, toCSV } from '../lib/csv.js'
   import {
     CORE_TARGETS, autoMap, buildContext, byteLen, detectHeaderRow,
@@ -259,7 +259,7 @@
           // created by an interrupted earlier attempt -- its password is ours.
           if (res.status === 'exists' && r.attempted && r.check?.level === 'ok') r.result = 'created'
           else r.result = res.status
-          if (res.error) r.check = { level: 'invalid', errors: { server: res.error } }
+          if (res.error) r.check = { level: 'invalid', errors: { server: serverMsg(res.error) } }
         }
         progress = Math.min(i + CHUNK, todo.length)
       }

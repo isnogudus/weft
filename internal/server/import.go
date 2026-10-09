@@ -27,15 +27,15 @@ const (
 func (s *Server) handleImportUsers(w http.ResponseWriter, r *http.Request) {
 	var req importReq
 	if err := readJSONMax(w, r, &req, importMaxBodyBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "ungültige Anfrage")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if len(req.Rows) == 0 {
-		writeError(w, http.StatusBadRequest, "keine Zeilen")
+		writeError(w, http.StatusBadRequest, "no rows")
 		return
 	}
 	if len(req.Rows) > maxImportRows {
-		writeError(w, http.StatusBadRequest, "zu viele Zeilen pro Anfrage (max. 100)")
+		writeError(w, http.StatusBadRequest, "too many rows per request (max. 100)")
 		return
 	}
 
@@ -53,7 +53,7 @@ func (s *Server) handleImportUsers(w http.ResponseWriter, r *http.Request) {
 				res.Status = "skipped"
 			case seen[row.UID]:
 				res.Status = "invalid"
-				res.Error = "doppelte uid in der Datei"
+				res.Error = "duplicate uid in the file"
 			default:
 				seen[row.UID] = true
 				res = s.importOne(r.Context(), c, row)
