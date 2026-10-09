@@ -166,9 +166,10 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		PrimaryGroup: c.PrimaryGroup, DefaultShell: c.DefaultShell, HomeTemplate: c.HomeTemplate,
 		UIDMin: c.UIDMin, UIDMax: c.UIDMax, GIDMin: c.GIDMin, GIDMax: c.GIDMax,
 		MaxPwdLength: c.MaxPasswordLength, MailAttr: c.MailAttr, MailAliasAttr: c.MailAliasAttr,
-		SessionTimeoutSeconds: int(c.SessionTimeout.D().Seconds()),
-		UserAttrs:             attrs,
-		TestUserGenerator:     c.TestUserGenerator,
+		SessionTimeoutSeconds:     int(c.SessionTimeout.D().Seconds()),
+		UserAttrs:                 attrs,
+		TestUserGenerator:         c.TestUserGenerator,
+		AdminCanChangeOwnPassword: c.AdminCanChangeOwnPassword,
 	})
 }
 
@@ -182,6 +183,10 @@ const unverifiedPWMsg = "Passwort geschrieben, aber nicht bestätigt (Verzeichni
 
 func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFromCtx(r.Context())
+	if sess.isAdmin && !s.cfg.AdminCanChangeOwnPassword {
+		writeError(w, http.StatusForbidden, "das Admin-Passwort kann in weft nicht geändert werden (admin_can_change_own_password = false)")
+		return
+	}
 	var req passwordReq
 	if err := readJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "ungültige Anfrage")

@@ -66,7 +66,8 @@ ldapd can enforce honestly:
   itself. That works when `admin_dn` is a real entry (on OpenLDAP, e.g. a
   dedicated admin account granted rights via `olcAccess`); a synthetic rootdn's
   password lives in `ldapd.conf` (`rootpw`) or `olcRootPW` and weft says so
-  instead of changing it.
+  instead of changing it. To hide the option altogether, set
+  `admin_can_change_own_password = false`.
 - **Everyone else = self-service only.** They may view their own profile/groups
   and change their own password (`by self` write, restricted to `userPassword`).
 
@@ -252,6 +253,7 @@ examples do for the `[[user_attr]]` tables).
 | `admin_uid` | `admin` | `WEFT_ADMIN_UID` | the login name that means "admin" |
 | `admin_dn` | `<user_id_attr>=<admin_uid>,ou=<people_ou>,<base_dn>` | `WEFT_ADMIN_DN` | the bind DN — must equal the server's rootdn |
 | `allow_admin` | `true` | `WEFT_ALLOW_ADMIN` | `false` = self-service only, no admin login, no wizard |
+| `admin_can_change_own_password` | `true` | `WEFT_ADMIN_CAN_CHANGE_OWN_PASSWORD` | `false` = no "change password" in the admin session (e.g. when the admin is the rootdn) |
 | **Directory layout** | | | |
 | `people_ou` | `people` | — | OU holding user entries |
 | `groups_ou` | `groups` | — | OU holding group entries |

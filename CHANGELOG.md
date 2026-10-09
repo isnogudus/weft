@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `admin_can_change_own_password` option (default true,
+  `WEFT_ADMIN_CAN_CHANGE_OWN_PASSWORD`). Set false to hide "Mein Passwort" in
+  the admin session and refuse the change with 403, e.g. when the admin is the
+  rootdn and its password lives in the server configuration anyway.
+
 ### Fixed
 - **The admin can change their own password again.** The change was written
   to `<user_id_attr>=<admin_uid>,ou=people,<base>` instead of the configured

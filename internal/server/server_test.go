@@ -240,6 +240,41 @@ func TestAdminPasswordUnverifiedIsNotRolledBack(t *testing.T) {
 	}
 }
 
+// admin_can_change_own_password = false refuses the admin's own change up
+// front and tells the SPA to hide it; regular users are unaffected.
+func TestAdminCanChangeOwnPasswordDisabled(t *testing.T) {
+	cfg := config.Default()
+	cfg.AdminCanChangeOwnPassword = false
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10999}, idalloc.Range{Min: 20000, Max: 20999})
+	ts := testServerFake(t, cfg, f)
+	admin := adminClient(t, ts)
+
+	resp, b := admin.do(http.MethodGet, "/api/meta", nil)
+	var meta metaDTO
+	if err := json.Unmarshal(b, &meta); resp.StatusCode != 200 || err != nil {
+		t.Fatalf("meta: %d %v %s", resp.StatusCode, err, b)
+	}
+	if meta.AdminCanChangeOwnPassword {
+		t.Fatal("meta: adminCanChangeOwnPassword should be false")
+	}
+
+	if resp, b := admin.do(http.MethodPost, "/api/me/password", passwordReq{OldPassword: "rootpw", NewPassword: "newadminpass56"}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("admin change own pw when disabled: want 403, got %d %s", resp.StatusCode, b)
+	}
+	if code := newClient(t, ts.URL).login("admin", "rootpw"); code != 200 {
+		t.Fatalf("old admin password: %d", code)
+	}
+
+	admin.do(http.MethodPost, "/api/users", createUserReq{UID: "bob", CN: "Bob", SN: "B", Password: "longpassword12"})
+	bob := newClient(t, ts.URL)
+	if code := bob.login("bob", "longpassword12"); code != 200 {
+		t.Fatalf("bob login: %d", code)
+	}
+	if resp, b := bob.do(http.MethodPost, "/api/me/password", passwordReq{OldPassword: "longpassword12", NewPassword: "longpassword34"}); resp.StatusCode != 200 {
+		t.Fatalf("bob change own pw: %d %s", resp.StatusCode, b)
+	}
+}
+
 func TestLoginRateLimit(t *testing.T) {
 	ts := testServer(t)
 	c := newClient(t, ts.URL)
