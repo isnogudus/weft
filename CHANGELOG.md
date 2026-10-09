@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `admin_can_change_own_password` option (default true,
+  `WEFT_ADMIN_CAN_CHANGE_OWN_PASSWORD`). Set false to hide "Mein Passwort" in
+  the admin session and refuse the change with 403, e.g. when the admin is the
+  rootdn and its password lives in the server configuration anyway.
+
 ### Fixed
 - **The admin can change their own password again.** The change was written
   to `<user_id_attr>=<admin_uid>,ou=people,<base>` instead of the configured
@@ -14,9 +20,12 @@ All notable changes to this project are documented here. The format is based on
   targets `admin_dn`, and only reports success once the new password actually
   binds. When `admin_dn` is the server's rootdn -- with no entry, or with one
   that slapd/ldapd ignore for the bind, as in `osixia/openldap` -- weft refuses
-  with an explanation (change `rootpw` / `olcRootPW` on the server) and
-  restores the entry's old password, instead of claiming a change that does
-  not take effect and breaking the session.
+  with an explanation (change `rootpw` / `olcRootPW` on the server) and sets
+  the entry back to the password it just bound with, instead of claiming a
+  change that does not take effect and breaking the session. If the check
+  fails for another reason (directory unreachable), weft keeps the change and
+  reports it as unconfirmed rather than rolling back a change that may be in
+  effect.
 
 ## [0.3.0] - 2026-08-20
 

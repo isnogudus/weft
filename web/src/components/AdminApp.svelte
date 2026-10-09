@@ -23,7 +23,9 @@
   <div class="row">
     <span class="muted">{app.me.uid} <span class="tag">Admin</span></span>
     <LangSwitch />
-    <button onclick={() => (showPw = true)}>{t('Mein Passwort')}</button>
+    {#if app.meta?.adminCanChangeOwnPassword}
+      <button onclick={() => (showPw = true)}>{t('Mein Passwort')}</button>
+    {/if}
     <button onclick={logout}>{t('Abmelden')}</button>
   </div>
 </header>

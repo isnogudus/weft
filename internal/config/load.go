@@ -40,6 +40,9 @@ func applyEnv(c *Config) error {
 	if err := envBool("WEFT_ALLOW_ADMIN", &c.AllowAdmin); err != nil {
 		return err
 	}
+	if err := envBool("WEFT_ADMIN_CAN_CHANGE_OWN_PASSWORD", &c.AdminCanChangeOwnPassword); err != nil {
+		return err
+	}
 	envStr("WEFT_CHROOT", &c.Chroot)
 	envStr("WEFT_USER", &c.User)
 	envStr("WEFT_GROUP", &c.Group)

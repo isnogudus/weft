@@ -35,6 +35,7 @@ type Fake struct {
 	gidRange    idalloc.Range
 	provisioned bool
 	unreachable bool
+	adminFault  func(password string) error // see SetAdminBindFault
 }
 
 // New returns an empty, unprovisioned Fake with the given admin password and
@@ -87,6 +88,15 @@ func (f *Fake) SetUnreachable(v bool) {
 	f.unreachable = v
 }
 
+// SetAdminBindFault makes BindAdmin consult fn first and fail with its error
+// when non-nil, simulating directory failures other than bad credentials.
+// nil removes the fault.
+func (f *Fake) SetAdminBindFault(fn func(password string) error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.adminFault = fn
+}
+
 // AddUser injects a user with a bind password directly (test helper).
 func (f *Fake) AddUser(u directory.User, password string) {
 	f.mu.Lock()
@@ -127,6 +137,11 @@ func verifyCrypt(stored, plain string) bool {
 func (f *Fake) BindAdmin(_ context.Context, password string) (directory.Conn, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.adminFault != nil {
+		if err := f.adminFault(password); err != nil {
+			return nil, err
+		}
+	}
 	ok := password == f.adminPass
 	if f.adminHash != "" && f.adminMode == AdminEntry {
 		ok = verifyCrypt(f.adminHash, password)

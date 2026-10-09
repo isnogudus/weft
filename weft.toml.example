@@ -53,6 +53,12 @@ admin_uid = "admin"
 # works out-of-band and for the one-time setup wizard.) The active mode is
 # printed at startup ("admin login: ENABLED/DISABLED").
 # allow_admin = true
+#
+# admin_can_change_own_password: offers "change password" in the admin session.
+# It writes userPassword on admin_dn, so it only works when admin_dn is a real
+# entry; a rootdn's password is rootpw / olcRootPW in the server config (weft
+# detects that and refuses). Set false to hide the option.
+# admin_can_change_own_password = true
 
 # --- Directory layout (defaults shown) ---
 # people_ou      = "people"

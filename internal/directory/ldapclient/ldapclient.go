@@ -13,8 +13,9 @@
 //
 // Everything else -- filters, objectClasses, {CRYPT} passwords, error mapping,
 // id allocation -- is plain LDAP and identical for both. userPassword is
-// written pre-hashed as "{CRYPT}$2b$..."; the server verifies it on bind, weft
-// never reads it back.
+// written pre-hashed as "{CRYPT}$2b$..."; the server verifies it on bind. weft
+// reads it back only to copy it verbatim in an ldapd rename (see
+// directory.Conn).
 //
 // Authorization is delegated to the server: each Conn is bound as the
 // logged-in identity (admin = rootdn, otherwise the user's own DN). The

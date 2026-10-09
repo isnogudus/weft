@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
@@ -195,6 +196,82 @@ func TestAdminRootDNPasswordIsRefused(t *testing.T) {
 				t.Fatalf("old admin password: %d", code)
 			}
 		})
+	}
+}
+
+// testServerFake is testServer with a caller-supplied config and Fake, for
+// tests that tune either.
+func testServerFake(t *testing.T, cfg config.Config, f *fake.Fake) *httptest.Server {
+	t.Helper()
+	cfg.BaseDN = "dc=example,dc=org"
+	cfg.CookieSecure = false
+	srv := New(cfg, f, nil)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(func() { ts.Close(); srv.Close() })
+	return ts
+}
+
+// A verification bind that fails for a reason other than bad credentials says
+// nothing about rootdn vs. entry. The change must not be rolled back: on a real
+// admin entry it is in effect, and undoing it would be the actual mistake.
+func TestAdminPasswordUnverifiedIsNotRolledBack(t *testing.T) {
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10999}, idalloc.Range{Min: 20000, Max: 20999})
+	ts := testServerFake(t, config.Default(), f)
+	admin := adminClient(t, ts)
+
+	f.SetAdminBindFault(func(pw string) error {
+		if pw == "newadminpass56" {
+			return errors.New("fake: connection reset")
+		}
+		return nil
+	})
+	resp, b := admin.do(http.MethodPost, "/api/me/password", passwordReq{OldPassword: "rootpw", NewPassword: "newadminpass56"})
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("admin change own pw with failing check: want 502, got %d %s", resp.StatusCode, b)
+	}
+	f.SetAdminBindFault(nil)
+
+	again := newClient(t, ts.URL)
+	if code := again.login("admin", "newadminpass56"); code != 200 {
+		t.Fatalf("new admin password after unverified change: want 200, got %d", code)
+	}
+	if code := newClient(t, ts.URL).login("admin", "rootpw"); code != http.StatusUnauthorized {
+		t.Fatalf("old admin password after unverified change: want 401, got %d", code)
+	}
+}
+
+// admin_can_change_own_password = false refuses the admin's own change up
+// front and tells the SPA to hide it; regular users are unaffected.
+func TestAdminCanChangeOwnPasswordDisabled(t *testing.T) {
+	cfg := config.Default()
+	cfg.AdminCanChangeOwnPassword = false
+	f := fake.New("rootpw", idalloc.Range{Min: 10000, Max: 10999}, idalloc.Range{Min: 20000, Max: 20999})
+	ts := testServerFake(t, cfg, f)
+	admin := adminClient(t, ts)
+
+	resp, b := admin.do(http.MethodGet, "/api/meta", nil)
+	var meta metaDTO
+	if err := json.Unmarshal(b, &meta); resp.StatusCode != 200 || err != nil {
+		t.Fatalf("meta: %d %v %s", resp.StatusCode, err, b)
+	}
+	if meta.AdminCanChangeOwnPassword {
+		t.Fatal("meta: adminCanChangeOwnPassword should be false")
+	}
+
+	if resp, b := admin.do(http.MethodPost, "/api/me/password", passwordReq{OldPassword: "rootpw", NewPassword: "newadminpass56"}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("admin change own pw when disabled: want 403, got %d %s", resp.StatusCode, b)
+	}
+	if code := newClient(t, ts.URL).login("admin", "rootpw"); code != 200 {
+		t.Fatalf("old admin password: %d", code)
+	}
+
+	admin.do(http.MethodPost, "/api/users", createUserReq{UID: "bob", CN: "Bob", SN: "B", Password: "longpassword12"})
+	bob := newClient(t, ts.URL)
+	if code := bob.login("bob", "longpassword12"); code != 200 {
+		t.Fatalf("bob login: %d", code)
+	}
+	if resp, b := bob.do(http.MethodPost, "/api/me/password", passwordReq{OldPassword: "longpassword12", NewPassword: "longpassword34"}); resp.StatusCode != 200 {
+		t.Fatalf("bob change own pw: %d %s", resp.StatusCode, b)
 	}
 }
 

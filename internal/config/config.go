@@ -80,6 +80,13 @@ type Config struct {
 	// still be used out-of-band (ldapd) and for the one-time setup wizard.
 	AllowAdmin bool `toml:"allow_admin"`
 
+	// AdminCanChangeOwnPassword offers "change password" in the admin session.
+	// The change writes userPassword on AdminDN, which only takes effect when
+	// AdminDN is a real entry that binds against it; for the rootdn the
+	// password is rootpw/olcRootPW, which weft detects and refuses after the
+	// fact. Set false to hide the option up front when the admin is the rootdn.
+	AdminCanChangeOwnPassword bool `toml:"admin_can_change_own_password"`
+
 	// Directory layout (good defaults; rarely changed).
 	PeopleOU     string `toml:"people_ou"`
 	GroupsOU     string `toml:"groups_ou"`
@@ -253,6 +260,8 @@ func Default() Config {
 		ListenAddr:        "127.0.0.1:8080",
 		SessionTimeout:    Duration(30 * time.Minute),
 		CookieSecure:      true,
+
+		AdminCanChangeOwnPassword: true,
 	}
 }
 

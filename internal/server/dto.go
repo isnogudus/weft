@@ -251,6 +251,9 @@ type metaDTO struct {
 	// TestUserGenerator gates the "generate test users" option in the bulk
 	// import wizard (config: enable_test_user_generator).
 	TestUserGenerator bool `json:"testUserGenerator"`
+	// AdminCanChangeOwnPassword gates "Mein Passwort" in the admin session
+	// (config: admin_can_change_own_password).
+	AdminCanChangeOwnPassword bool `json:"adminCanChangeOwnPassword"`
 }
 
 type userAttrDTO struct {

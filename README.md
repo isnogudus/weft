@@ -66,7 +66,8 @@ ldapd can enforce honestly:
   itself. That works when `admin_dn` is a real entry (on OpenLDAP, e.g. a
   dedicated admin account granted rights via `olcAccess`); a synthetic rootdn's
   password lives in `ldapd.conf` (`rootpw`) or `olcRootPW` and weft says so
-  instead of changing it.
+  instead of changing it. To hide the option altogether, set
+  `admin_can_change_own_password = false`.
 - **Everyone else = self-service only.** They may view their own profile/groups
   and change their own password (`by self` write, restricted to `userPassword`).
 
@@ -162,7 +163,7 @@ These shaped the design (checked against the ldapd source and man pages):
 |------|---------------------|
 | Ships `core`, `inetorgperson`, `nis` schemas and **enforces** loaded schema | Entries carry the full objectClass chain and all MUST attributes |
 | **No ModifyDN/ModRDN** operation | uid rename is done as *add-new → fix memberUid → delete-old* (not atomic) |
-| Bind verifies `{CRYPT}` (= bcrypt on OpenBSD), `{SHA}`, `{SSHA}` | weft writes `userPassword: {CRYPT}$2b$...`; it never reads or verifies hashes itself |
+| Bind verifies `{CRYPT}` (= bcrypt on OpenBSD), `{SHA}`, `{SSHA}` | weft writes `userPassword: {CRYPT}$2b$...`; it never verifies hashes itself and reads them only to copy them verbatim in a uid rename |
 | ACL subjects are only `any` / `self` / a single DN | Admin = rootdn; users limited to `by self` userPassword writes |
 | The namespace suffix entry is **not** auto-created | the setup wizard creates the base entry (`dc=`/`o=`/`ou=`) before the OUs, so the directory may start empty |
 
@@ -252,6 +253,7 @@ examples do for the `[[user_attr]]` tables).
 | `admin_uid` | `admin` | `WEFT_ADMIN_UID` | the login name that means "admin" |
 | `admin_dn` | `<user_id_attr>=<admin_uid>,ou=<people_ou>,<base_dn>` | `WEFT_ADMIN_DN` | the bind DN — must equal the server's rootdn |
 | `allow_admin` | `true` | `WEFT_ALLOW_ADMIN` | `false` = self-service only, no admin login, no wizard |
+| `admin_can_change_own_password` | `true` | `WEFT_ADMIN_CAN_CHANGE_OWN_PASSWORD` | `false` = no "change password" in the admin session (e.g. when the admin is the rootdn) |
 | **Directory layout** | | | |
 | `people_ou` | `people` | — | OU holding user entries |
 | `groups_ou` | `groups` | — | OU holding group entries |
@@ -395,6 +397,14 @@ you may not have):
   password check during the bind operation itself, not anonymous reads.
 - Passwords are hashed client-side (bcrypt) before `userPassword` is written;
   inputs longer than 72 bytes are rejected (bcrypt truncation).
+- **Password hashes are opaque to weft.** It never reads `userPassword` to
+  display, compare or verify it; only the directory server verifies it, on
+  bind. The one read is the uid rename on ldapd, which has no ModifyDN and
+  copies the value verbatim into the new entry (as the rootdn). That keeps the
+  `by self =w` ACL sufficient. The flip side: weft does not restore an entry's
+  previous `userPassword` value. Where it puts an old password back, it hashes
+  the plaintext again, so e.g. an `{SSHA}` value becomes `{CRYPT}$2b$…` for the
+  same password.
 - Certificate verification can be skipped for a self-signed LDAP server via
   `insecure_skip_verify` / `-insecure` (a startup warning is logged); prefer
   pinning the CA with `ca_cert_file`.
