@@ -39,6 +39,12 @@ weft:
     secretName: ""
     configMapName: ""
     key: ca.crt
+  # Reverse proxies (CIDRs or IPs) whose X-Forwarded-For weft believes for the
+  # per-client login rate limit -- with an Ingress, the controller pods'
+  # addresses, typically the cluster's pod CIDR, e.g. ["10.244.0.0/16"].
+  # Empty means the header is ignored and all clients behind the Ingress share
+  # one rate-limit bucket.
+  trustedProxies: []
   # Further WEFT_* settings as plain environment variables; see the README's
   # options table, e.g.:
   #   WEFT_ALLOW_ADMIN: "false"

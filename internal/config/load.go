@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -67,6 +68,14 @@ func applyEnv(c *Config) error {
 	}
 	if err := envBool("WEFT_COOKIE_SECURE", &c.CookieSecure); err != nil {
 		return err
+	}
+	if v := os.Getenv("WEFT_TRUSTED_PROXIES"); v != "" {
+		c.TrustedProxies = nil
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				c.TrustedProxies = append(c.TrustedProxies, p)
+			}
+		}
 	}
 	if err := envInt("WEFT_BCRYPT_COST", &c.BcryptCost); err != nil {
 		return err

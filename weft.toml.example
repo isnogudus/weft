@@ -216,3 +216,14 @@ listen_addr = "127.0.0.1:8080"   # put relayd/httpd in front for TLS
 #                             # this long without a request (sliding), and the
 #                             # SPA switches to the login view when it expires.
 cookie_secure = true             # set false ONLY for local plain-http dev
+
+# trusted_proxies lists the reverse proxies (CIDRs or bare IPs) in front of
+# weft. Only a connection from one of them may supply the client IP via
+# X-Forwarded-For; weft reads the header from the right and takes the first
+# address that is not itself a trusted proxy. Empty (default) ignores the
+# header, since any client can send it -- the login rate limit then keys on
+# the proxy's address, so all clients share one bucket. Set it whenever weft
+# runs behind relayd/httpd/nginx or a Kubernetes Ingress: relayd on the same
+# host is 127.0.0.1, a container setup is the proxy's network, e.g.
+# ["172.16.0.0/12"]. Env: WEFT_TRUSTED_PROXIES="127.0.0.1,10.0.0.0/8".
+# trusted_proxies = ["127.0.0.1"]

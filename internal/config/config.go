@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -153,6 +154,12 @@ type Config struct {
 	TLSKeyFile     string   `toml:"tls_key_file"`
 	SessionTimeout Duration `toml:"session_timeout"` // e.g. "30m"
 	CookieSecure   bool     `toml:"cookie_secure"`   // set false only for local http dev
+
+	// TrustedProxies lists the reverse proxies (CIDRs or bare IPs) whose
+	// X-Forwarded-For weft believes when deriving the client IP for the login
+	// rate limit. Empty (default) ignores X-Forwarded-For entirely and keys on
+	// the TCP peer address, since any client can send that header.
+	TrustedProxies []string `toml:"trusted_proxies"`
 }
 
 // UserAttr defines one configurable extra user attribute (a [[user_attr]]
@@ -453,7 +460,30 @@ func (c Config) Validate() error {
 	if err := c.validateUserAttrs(); err != nil {
 		return err
 	}
+	if _, err := c.TrustedProxyPrefixes(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// TrustedProxyPrefixes parses TrustedProxies. Each entry is a CIDR
+// ("10.0.0.0/8") or a bare IP, which stands for a single host.
+func (c Config) TrustedProxyPrefixes() ([]netip.Prefix, error) {
+	out := make([]netip.Prefix, 0, len(c.TrustedProxies))
+	for _, s := range c.TrustedProxies {
+		s = strings.TrimSpace(s)
+		if p, err := netip.ParsePrefix(s); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(s)
+		if err != nil {
+			return nil, fmt.Errorf("config: trusted_proxies %q: not a CIDR or IP address", s)
+		}
+		a = a.Unmap()
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out, nil
 }
 
 // attrNamePattern is the LDAP attribute descriptor charset (RFC 4512 keystring).

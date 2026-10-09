@@ -26,6 +26,9 @@ data:
   {{- with $w.tlsMode }}
   WEFT_TLS_MODE: {{ . | quote }}
   {{- end }}
+  {{- with $w.trustedProxies }}
+  WEFT_TRUSTED_PROXIES: {{ join "," . | quote }}
+  {{- end }}
   {{- if include "weft.hasCaCert" . }}
   WEFT_CA_CERT_FILE: /etc/weft/ca/{{ $w.caCert.key }}
   {{- end }}

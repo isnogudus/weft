@@ -6,7 +6,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+Upgrading: deployments behind relayd, httpd, nginx, a Kubernetes Ingress or
+any other reverse proxy must now set `trusted_proxies` (e.g.
+`trusted_proxies = ["127.0.0.1"]` for relayd on the same host, or
+`weft.trustedProxies` in the Helm chart) to keep per-client login rate
+limiting. Without it weft no longer believes `X-Forwarded-For` and keys the
+limit on the proxy's address, so all clients share one bucket of five attempts
+per minute. Anything matching on the text of API error messages must expect
+English now (see Changed).
+
+### Security
+- **The login rate limit can no longer be bypassed with a forged
+  `X-Forwarded-For`.** weft took the client IP from the header's first entry,
+  which is whatever the client sent, so a fresh value per request bought a fresh
+  bucket -- with or without a proxy. chi's `RealIP` middleware did the same with
+  `X-Real-IP` and `True-Client-IP` and has been removed. The header is now only
+  read when the connection comes from a trusted proxy, and then from the right:
+  the client IP is the rightmost address that is not itself a trusted proxy.
+
 ### Added
+- `trusted_proxies` option (default empty, `WEFT_TRUSTED_PROXIES`
+  comma-separated): CIDRs or bare IPs of the reverse proxies whose
+  `X-Forwarded-For` weft believes. The Helm chart exposes it as
+  `weft.trustedProxies`.
 - **Kubernetes support.** Releases now publish a container image for
   linux/amd64 and linux/arm64 (`ghcr.io/isnogudus/weft`) and a Helm chart
   (`oci://ghcr.io/isnogudus/charts/weft`). The chart runs a single hardened
@@ -17,13 +39,6 @@ All notable changes to this project are documented here. The format is based on
   cluster on every pull request.
 
 ### Changed
-- The Dockerfile builds the frontend and the Go binary on the build host's
-  architecture and cross-compiles, so multi-arch image builds need no
-  emulation for those stages.
-
-## [Unreleased]
-
-### Changed
 - **API error messages are English.** The `error` field of non-2xx responses
   was German (`"nicht gefunden"`, `"ungültige Anfrage"`, ...) and is now
   English (`"not found"`, `"invalid request"`, ...), matching the validation
@@ -31,6 +46,9 @@ All notable changes to this project are documented here. The format is based on
   as before; the English UI no longer shows German server errors. Anything
   matching on the old German text needs updating; the status codes are
   unchanged.
+- The Dockerfile builds the frontend and the Go binary on the build host's
+  architecture and cross-compiles, so multi-arch image builds need no
+  emulation for those stages.
 
 ## [0.4.0] - 2026-10-09
 

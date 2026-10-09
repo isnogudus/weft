@@ -6,6 +6,12 @@ Open:
 {{- range .Values.ingress.hosts }}
   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/
 {{- end }}
+{{- if not .Values.weft.trustedProxies }}
+
+weft.trustedProxies is empty, so weft ignores X-Forwarded-For and every client
+behind the Ingress shares one login rate-limit bucket. Set it to the Ingress
+controller's pod CIDR to rate-limit per client.
+{{- end }}
 {{- else }}
 
 No Ingress is configured. To try it locally:

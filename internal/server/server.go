@@ -6,6 +6,7 @@ package server
 import (
 	"io/fs"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -24,6 +25,7 @@ type Server struct {
 	svc      *service.Service
 	sessions *sessionStore
 	login    *rateLimiter
+	proxies  []netip.Prefix // trusted reverse proxies, see clientIP
 	static   fs.FS
 	handler  http.Handler
 
@@ -40,12 +42,15 @@ type Server struct {
 // New builds a Server. staticFS is the embedded frontend (its root containing
 // index.html); pass nil to serve only the API.
 func New(cfg config.Config, dir directory.Directory, staticFS fs.FS) *Server {
+	// Validate has already rejected malformed entries.
+	proxies, _ := cfg.TrustedProxyPrefixes()
 	s := &Server{
 		cfg:      cfg,
 		dir:      dir,
 		svc:      service.New(cfg),
 		sessions: newSessionStore(cfg.SessionTimeout.D()),
 		login:    newRateLimiter(5, time.Minute),
+		proxies:  proxies,
 		static:   staticFS,
 
 		healthTTL: 2 * time.Second,
@@ -63,7 +68,6 @@ func (s *Server) Close() { s.sessions.close() }
 func (s *Server) routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.RealIP)
 	r.Use(requestLog)
 	r.Use(securityHeaders)
 
