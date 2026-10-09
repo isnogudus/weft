@@ -1,16 +1,15 @@
-// Random, easy-to-type passwords, ported from the default mode of
-// password-generator: 16 characters from lowercase, uppercase and digits, at
-// least one of each, shown in blocks of four joined by "." (e.g.
-// "x8GG.JpJN.LN40.t7qx"). The dots are part of the password. About 92 bits of
-// entropy (16 characters from a pool of 54).
+// Random, easy-to-type passwords, the method of password-generator with
+// lowercase and digits only ("-wd -l 12"): 12 characters, at least one of each
+// class, shown in blocks of four joined by "." (e.g. "k3pa.7xmq.e2tn"). The
+// dots are part of the password. 60 bits of entropy (12 characters from a pool
+// of 32) -- ample behind bcrypt, which weft always writes.
 
-// No easily confused letters (l, o, I, O), so 0 and 1 stay unambiguous; no
-// y/z/Y/Z, which QWERTY and QWERTZ keyboards swap.
+// No easily confused letters (l, o), so 0 and 1 stay unambiguous; no y/z,
+// which QWERTY and QWERTZ keyboards swap. No uppercase: nothing to shift.
 export const LOWER = 'abcdefghijkmnpqrstuvwx'
-export const UPPER = 'ABCDEFGHJKLMNPQRSTUVWX'
 export const DIGITS = '0123456789'
 
-const LENGTH = 16
+const LENGTH = 12
 const BLOCK_SIZE = 4
 const SEPARATOR = '.'
 
@@ -31,7 +30,7 @@ const pick = (alphabet) => alphabet[randomIndex(alphabet.length)]
 // the rest from the combined pool, shuffled so the mandatory characters have no
 // fixed position.
 export function generatePassword() {
-  const classes = [LOWER, UPPER, DIGITS]
+  const classes = [LOWER, DIGITS]
   const pool = classes.join('')
   const chars = classes.map(pick)
   while (chars.length < LENGTH) chars.push(pick(pool))

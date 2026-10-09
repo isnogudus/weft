@@ -15,10 +15,10 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 - **Generated passwords are random instead of German passphrases.**
   "Vorschlagen" and the bulk import now produce passwords like
-  `x8GG.JpJN.LN40.t7qx`, the method of password-generator: 16 characters from
-  lowercase, uppercase and digits, at least one of each, without `l`/`o`/`I`/`O`
-  and `y`/`z`, in dot-separated blocks of four (~92 bits). The passphrase word
-  lists (~200 KB) are gone from the frontend.
+  `k3pa.7xmq.e2tn`, the method of password-generator with lowercase and digits
+  only: 12 characters, at least one of each, without `l`/`o` and `y`/`z`, in
+  dot-separated blocks of four (60 bits, ample behind bcrypt). The passphrase
+  word lists (~200 KB) are gone from the frontend.
 
 ### Fixed
 - **The admin can change their own password again.** The change was written

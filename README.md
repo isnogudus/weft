@@ -398,11 +398,11 @@ you may not have):
 - Passwords are hashed client-side (bcrypt) before `userPassword` is written;
   inputs longer than 72 bytes are rejected (bcrypt truncation).
 - **Generated passwords** ("Vorschlagen", bulk import) are random and easy to
-  type, e.g. `x8GG.JpJN.LN40.t7qx`: 16 characters from lowercase, uppercase
-  and digits, at least one of each, about 92 bits of entropy. The dots are part
-  of the password. Easily confused letters (`l`, `o`, `I`, `O`) are left out,
-  and so are `y`/`z`, which QWERTY and QWERTZ keyboards swap. They are produced
-  in the browser with `crypto.getRandomValues`.
+  type, e.g. `k3pa.7xmq.e2tn`: 12 characters from lowercase letters and digits,
+  at least one of each, 60 bits of entropy -- ample behind bcrypt. The dots are
+  part of the password. There are no uppercase letters, no easily confused `l`
+  and `o`, and no `y`/`z`, which QWERTY and QWERTZ keyboards swap. They are
+  produced in the browser with `crypto.getRandomValues`.
 - **Password hashes are opaque to weft.** It never reads `userPassword` to
   display, compare or verify it; only the directory server verifies it, on
   bind. The one read is the uid rename on ldapd, which has no ModifyDN and
