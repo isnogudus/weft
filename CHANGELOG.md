@@ -4,10 +4,10 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-10-09
 
-Upgrading: deployments behind relayd, httpd, nginx, a Kubernetes Ingress or
-any other reverse proxy must now set `trusted_proxies` (e.g.
+Upgrading from 0.4.0: deployments behind relayd, httpd, nginx, a Kubernetes
+Ingress or any other reverse proxy must now set `trusted_proxies` (e.g.
 `trusted_proxies = ["127.0.0.1"]` for relayd on the same host, or
 `weft.trustedProxies` in the Helm chart) to keep per-client login rate
 limiting. Without it weft no longer believes `X-Forwarded-For` and keys the
@@ -216,6 +216,7 @@ First public release.
   ACLs), `rc.d` service, `relayd` TLS termination.
 
 [Unreleased]: https://github.com/isnogudus/weft/compare/v0.4.0...HEAD
+[0.5.0]: https://github.com/isnogudus/weft/releases/tag/v0.5.0
 [0.4.0]: https://github.com/isnogudus/weft/releases/tag/v0.4.0
 [0.3.0]: https://github.com/isnogudus/weft/releases/tag/v0.3.0
 [0.2.0]: https://github.com/isnogudus/weft/releases/tag/v0.2.0
